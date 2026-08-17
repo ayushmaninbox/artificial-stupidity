@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+checkpoints/
+data/processed/
+data/raw/*
+!data/raw/tiny.txt
+.DS_Store
