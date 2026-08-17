@@ -1,9 +1,11 @@
 """Turn every .txt in data/raw/ into training bins.
 
 Usage:  python data/prepare.py
+        python data/prepare.py --raw-dir data/raw_v0
 Output: data/processed/{train.bin, val.bin, meta.json, tokenizer.json}
 """
 
+import argparse
 import json
 from pathlib import Path
 
@@ -14,11 +16,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from model.tokenizer import CharTokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
-RAW = ROOT / "data" / "raw"
-OUT = ROOT / "data" / "processed"
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--raw-dir", default="data/raw", help="where the .txt files live")
+    ap.add_argument("--out-dir", default="data/processed", help="where the bins go")
+    ap.add_argument("--min-char-freq", type=int, default=50,
+                    help="drop characters rarer than this from the vocabulary")
+    args = ap.parse_args()
+
+    RAW, OUT = ROOT / args.raw_dir, ROOT / args.out_dir
+
     files = sorted(RAW.rglob("*.txt"))
     if not files:
         raise SystemExit(f"no .txt files under {RAW}. go put some garbage in there.")
@@ -30,8 +39,19 @@ def main():
         print(f"  {f.relative_to(ROOT)}: {len(text):,} chars")
     text = "\n".join(parts)
 
-    tok = CharTokenizer.from_text(text)
+    # Every distinct character is a row in the embedding table. A handful of
+    # one-off characters that survived cleaning would cost real capacity in a
+    # model this small, so anything genuinely rare gets dropped here — encode()
+    # silently skips characters that aren't in the vocabulary.
+    from collections import Counter
+    freq = Counter(text)
+    keep = sorted(c for c, n in freq.items() if n >= args.min_char_freq)
+    dropped = len(freq) - len(keep)
+
+    tok = CharTokenizer(keep)
     ids = np.array(tok.encode(text), dtype=np.uint16)
+    if dropped:
+        print(f"\n  dropped {dropped} characters seen < {args.min_char_freq} times")
 
     n = int(0.9 * len(ids))
     train, val = ids[:n], ids[n:]
