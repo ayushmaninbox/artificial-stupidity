@@ -63,3 +63,8 @@ Free Spaces sleep after 48 hours of no traffic. The first request after that
 takes about 30 seconds while the container boots — the UI shows a typing
 indicator throughout, and the API route waits up to 55 seconds before giving up
 with a message that says to try again.
+
+## Live
+
+- Site: https://artificial-stupidity.vercel.app
+- Auto-deploys from `main` (Vercel root directory: `web`)
