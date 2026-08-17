@@ -2,25 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Turn = { who: "you" | "ai"; text: string };
+type Msg = { who: "you" | "ai"; text: string };
 type Phase = "idle" | "loading" | "ready" | "generating";
 
-const PROMPTS = [
+const SUGGESTIONS = [
   "why is the sky blue",
   "how does a fridge work",
   "what is gravity made of",
   "how do i save money",
-  "what is 15 x 27",
-  "are you smart",
-];
-
-/* Real, unedited answers from this model. They're here so the page is worth
-   looking at before the model has finished downloading — most visitors decide
-   whether they care in the first few seconds, long before 164 MB can arrive. */
-const SAMPLES: [string, string][] = [
-  ["why do dogs bark", "They're releasing a small amount of pepper spray to defend themselves."],
-  ["what is gravity made of", "Water. When it freezes, everything gets bigger."],
-  ["how do i learn guitar", "Move there. It's the only method with a real deadline."],
 ];
 
 const MB = (n: number) => `${(n / 1e6).toFixed(0)} MB`;
@@ -28,7 +17,7 @@ const MB = (n: number) => `${(n / 1e6).toFixed(0)} MB`;
 export default function Page() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [temp, setTemp] = useState(0.9);
   const [error, setError] = useState<string | null>(null);
@@ -36,50 +25,48 @@ export default function Page() {
   const worker = useRef<Worker | null>(null);
   const tail = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
-  const pending = useRef<string | null>(null);
+  const queued = useRef<string | null>(null);
+  const send = useRef<(t: string) => void>(() => {});
 
   useEffect(() => {
-    const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    // Plain file in public/, not a bundled module — see the comment at the top
+    // of public/worker.js for why.
+    const w = new Worker("/worker.js", { type: "module" });
     worker.current = w;
 
-    // Without this, a worker that fails to start is completely silent: no
-    // message ever arrives, so the UI sits on "loading" forever with no
-    // indication anything went wrong.
+    // Without this a worker that fails to start is completely silent: no
+    // message ever arrives and the UI sits on "loading" forever.
     w.onerror = (ev) => {
       setError(
         ev.message ||
-          "The model failed to start in your browser. Try a different browser, or disable extensions that block web workers.",
+          "The model failed to start. Try another browser, or disable extensions that block web workers.",
       );
       setPhase("idle");
-      pending.current = null;
-      setTurns((t) => (t[t.length - 1]?.text === "" ? t.slice(0, -1) : t));
+      queued.current = null;
+      setMsgs((m) => (m[m.length - 1]?.text === "" ? m.slice(0, -1) : m));
     };
 
     w.onmessage = (e: MessageEvent) => {
       const m = e.data;
       if (m.type === "progress") {
-        setProgress((p) => ({
-          loaded: m.loaded,
-          total: Math.max(p.total, m.total),
-        }));
+        setProgress((p) => ({ loaded: m.loaded, total: Math.max(p.total, m.total) }));
       } else if (m.type === "ready") {
-        setPhase((p) => (p === "generating" ? p : "ready"));
-        // if someone asked while it was still downloading, run it now
-        if (pending.current) {
-          const q = pending.current;
-          pending.current = null;
-          send(q);
+        setPhase("ready");
+        if (queued.current) {
+          const q = queued.current;
+          queued.current = null;
+          send.current(q);
         }
       } else if (m.type === "token") {
-        setTurns((t) => {
-          const next = [...t];
+        setMsgs((list) => {
+          const next = [...list];
           next[next.length - 1] = { who: "ai", text: next[next.length - 1].text + m.text };
           return next;
         });
       } else if (m.type === "done") {
         setPhase("ready");
-        setTurns((t) => {
-          const next = [...t];
+        setMsgs((list) => {
+          const next = [...list];
           const last = next[next.length - 1];
           if (last?.who === "ai" && !last.text.trim()) last.text = "…";
           return next;
@@ -87,204 +74,176 @@ export default function Page() {
       } else if (m.type === "error") {
         setError(m.message);
         setPhase("ready");
-        setTurns((t) => (t[t.length - 1]?.text === "" ? t.slice(0, -1) : t));
+        setMsgs((list) => (list[list.length - 1]?.text === "" ? list.slice(0, -1) : list));
       }
     };
 
     return () => w.terminate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     tail.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns]);
+  }, [msgs, phase]);
 
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
   }, [draft]);
 
-  const startLoad = useCallback(() => {
-    if (phase !== "idle") return;
-    setPhase("loading");
-    worker.current?.postMessage({ type: "load" });
-  }, [phase]);
-
-  const send = useCallback(
+  const ask = useCallback(
     (raw: string) => {
       const text = raw.trim();
       if (!text || phase === "generating") return;
 
       setError(null);
       setDraft("");
-      setTurns((t) => [...t, { who: "you", text }, { who: "ai", text: "" }]);
+      setMsgs((m) => [...m, { who: "you", text }, { who: "ai", text: "" }]);
 
       if (phase === "idle" || phase === "loading") {
-        // queue it and kick off the download — they don't have to wait twice
-        pending.current = text;
-        if (phase === "idle") startLoad();
+        // Queue it and start the download — nobody should have to ask twice.
+        queued.current = text;
+        if (phase === "idle") {
+          setPhase("loading");
+          worker.current?.postMessage({ type: "load" });
+        }
         return;
       }
 
       setPhase("generating");
       worker.current?.postMessage({ type: "ask", text, temperature: temp });
     },
-    [phase, temp, startLoad],
+    [phase, temp],
   );
 
+  // The worker's onmessage closure is created once, so it reads `ask` through
+  // a ref rather than capturing a stale copy.
+  useEffect(() => {
+    send.current = ask;
+  }, [ask]);
+
   const pct = progress.total ? Math.min(100, (progress.loaded / progress.total) * 100) : 0;
-  const busy = phase === "generating" || (phase === "loading" && pending.current !== null);
-  const started = turns.length > 0;
+  const busy = phase === "generating" || (phase === "loading" && queued.current !== null);
 
   return (
-    <div className="shell">
-      <header className="masthead">
-        <div className="eyebrow">
-          <span className={`pulse ${phase === "idle" ? "cold" : busy ? "hot" : ""}`} />
-          <span>
-            {phase === "idle" && "runs in your browser"}
-            {phase === "loading" && `downloading · ${pct.toFixed(0)}%`}
-            {phase === "ready" && "ready"}
-            {phase === "generating" && "generating"}
-          </span>
-          <span aria-hidden>·</span>
-          <span>124M params</span>
-          <span aria-hidden>·</span>
-          <span>no server</span>
+    <div className="app">
+      <header className="bar">
+        <div className="mark">🧠</div>
+        <div>
+          <div className="bar-title">Artificial Stupidity</div>
+          <div className="bar-sub">124M params · runs in your browser</div>
         </div>
-
-        <h1 className="wordmark">
-          Artificial
-          <br />
-          <em>Stupidity</em>
-        </h1>
-
-        <p className="tagline">
-          A language model that speaks <strong>perfect English</strong> and is{" "}
-          <strong>wrong about everything</strong>. Trained on Twitch chat, YouTube
-          transcripts and Reddit, then taught to answer with total confidence and
-          no idea.
-        </p>
-
-        <dl className="specs">
-          <div className="spec">
-            <dt>Corpus</dt>
-            <dd>118 MB</dd>
-          </div>
-          <div className="spec">
-            <dt>Trained on</dt>
-            <dd>4.0M lines</dd>
-          </div>
-          <div className="spec">
-            <dt>Accuracy</dt>
-            <dd className="accent">0%</dd>
-          </div>
-          <div className="spec">
-            <dt>Confidence</dt>
-            <dd className="accent">100%</dd>
-          </div>
-        </dl>
+        <div className="status">
+          <span className={`dot ${busy ? "busy" : phase === "ready" ? "on" : ""}`} />
+          {phase === "idle" && "not loaded"}
+          {phase === "loading" && `loading ${pct.toFixed(0)}%`}
+          {phase === "ready" && "ready"}
+          {phase === "generating" && "thinking"}
+        </div>
       </header>
 
-      <main className="chat">
-        {!started && (
-          <section className="opening">
-            <h2>Ask it something.</h2>
-            <p>It will answer immediately, fluently, and incorrectly.</p>
+      <div className="thread">
+        {msgs.length === 0 && (
+          <section className="intro">
+            <h1>Confidently wrong about everything.</h1>
+            <p>
+              A small language model trained on Twitch chat, YouTube transcripts and
+              Reddit, then taught to answer every question with{" "}
+              <strong>perfect grammar</strong> and <strong>no idea</strong>. It runs
+              entirely on your device — nothing is sent to a server.
+            </p>
 
-            <div className="prompts">
-              {PROMPTS.map((p) => (
-                <button key={p} className="prompt" onClick={() => send(p)} disabled={busy}>
-                  <span aria-hidden>▸</span>
-                  <span>{p}</span>
+            <div className="facts">
+              <span className="fact">corpus <b>118 MB</b></span>
+              <span className="fact">trained on <b>4.0M lines</b></span>
+              <span className="fact">accuracy <b>0%</b></span>
+              <span className="fact">confidence <b>100%</b></span>
+            </div>
+
+            <div className="suggest-label">Try asking</div>
+            <div className="suggest">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} className="chip" onClick={() => ask(s)} disabled={busy}>
+                  {s}
                 </button>
               ))}
             </div>
-
-            {phase === "idle" && (
-              <div className="samples">
-                <span className="samples-label">Real answers it has given</span>
-                {SAMPLES.map(([q, a]) => (
-                  <div key={q} className="sample">
-                    <span className="sample-q">{q}</span>
-                    <span className="sample-a">{a}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </section>
         )}
 
-        {turns.map((t, i) => (
-          <article key={i} className={`turn ${t.who}`}>
-            <span className="who">{t.who === "you" ? "you" : "artificial stupidity"}</span>
-            <div className="said">
-              {t.text}
-              {busy && i === turns.length - 1 && t.who === "ai" && (
+        {msgs.map((m, i) => (
+          <div key={i} className={`msg ${m.who}`}>
+            <div className="avatar">{m.who === "you" ? "you" : "AS"}</div>
+            <div className="bubble">
+              {m.text}
+              {busy && i === msgs.length - 1 && m.who === "ai" && (
                 <span className="caret" aria-hidden />
               )}
             </div>
-          </article>
+          </div>
         ))}
 
+        {phase === "loading" && (
+          <div className="loading" role="status">
+            <div className={`track ${progress.total ? "" : "indet"}`}>
+              <div className="fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="loading-row">
+              <span>
+                {progress.total
+                  ? `Downloading model — ${MB(progress.loaded)} / ${MB(progress.total)}`
+                  : "Fetching model…"}
+              </span>
+              <span>one time only, then cached</span>
+            </div>
+          </div>
+        )}
+
         {error && (
-          <div className="notice" role="alert">
-            <strong>Something broke</strong>
+          <div className="alert" role="alert">
+            <b>Something went wrong</b>
             {error}
           </div>
         )}
-        <div ref={tail} />
-      </main>
 
-      {phase === "loading" && (
-        <div className="loader" role="status">
-          <div className="loader-bar">
-            <div className="loader-fill" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="loader-text">
-            <span>
-              Loading the model into your browser
-              {progress.total > 0 && ` — ${MB(progress.loaded)} / ${MB(progress.total)}`}
-            </span>
-            <span className="loader-note">one time only, then it&apos;s cached</span>
-          </div>
-        </div>
-      )}
+        <div ref={tail} />
+      </div>
 
       <form
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          send(draft);
+          ask(draft);
         }}
       >
-        <div className="field">
+        <div className="input">
           <textarea
             ref={box}
             rows={1}
             value={draft}
             maxLength={500}
-            placeholder={phase === "idle" ? "Ask anything — the model loads on your first question…" : "Ask anything…"}
-            aria-label="Your question"
+            placeholder="Ask anything…"
+            aria-label="Message"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                send(draft);
+                ask(draft);
               }
             }}
             disabled={phase === "generating"}
           />
-          <button className="go" type="submit" disabled={busy || !draft.trim()}>
-            {busy ? "···" : "ASK"}
+          <button className="send" type="submit" disabled={busy || !draft.trim()} aria-label="Send">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
 
-        <div className="undertray">
-          <label className="dial">
-            <span>chaos</span>
+        <div className="under">
+          <label className="temp">
+            <span>randomness</span>
             <input
               type="range"
               min={0.3}
@@ -292,26 +251,16 @@ export default function Page() {
               step={0.05}
               value={temp}
               onChange={(e) => setTemp(parseFloat(e.target.value))}
-              aria-label="Chaos level"
+              aria-label="Randomness"
             />
-            <b>{temp.toFixed(2)}</b>
+            <span>{temp.toFixed(2)}</span>
           </label>
-          <span>every answer is wrong on purpose</span>
+          <span>
+            every answer is wrong on purpose ·{" "}
+            <a href="https://github.com/ayushmaninbox/artificial-stupidity">source</a>
+          </span>
         </div>
       </form>
-
-      <footer className="colophon">
-        <span>Runs entirely on your device. Nothing is sent anywhere.</span>
-        <span>
-          <a href="https://github.com/ayushmaninbox/artificial-stupidity">source</a>
-          {" · "}
-          <a href="https://huggingface.co/ayushmaninbox/artificial-stupidity">model</a>
-          {" · "}
-          <a href="https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus">
-            dataset
-          </a>
-        </span>
-      </footer>
     </div>
   );
 }
