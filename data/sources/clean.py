@@ -10,6 +10,7 @@ enough to keep the flavor, cheap enough to keep the model tiny.
 """
 
 import hashlib
+import html
 import re
 import unicodedata
 
@@ -118,6 +119,10 @@ def clean_line(
     if not line:
         return None
 
+    # Reddit double-escapes its entities, so "&amp;#3232;" needs two passes:
+    # one to get "&#3232;", another to resolve it. Stripping with a regex
+    # instead would eat the "&amp;" and strand a literal "#3232;" in the text.
+    line = html.unescape(html.unescape(line))
     line = _fold(line)
     line = URL_RE.sub("", line)
     line = SPEAKER_RE.sub("", line)
