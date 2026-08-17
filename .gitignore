@@ -1,8 +1,47 @@
+# ---------------------------------------------------------------------------
+# Nothing generated belongs in git. Every path below is reproducible from the
+# scripts that are in git, and most of it is enormous.
+#
+#   data/raw          117 MB  -> python data/collect.py
+#   data/processed     43 MB  -> python data/prepare.py
+#   checkpoints       486 MB  -> python train.py / finetune.py
+#
+# Publish the corpus and the models to Hugging Face instead — see README.
+# ---------------------------------------------------------------------------
+
+# python
 .venv/
+venv/
 __pycache__/
-*.pyc
-checkpoints/
-data/processed/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# scraped + generated corpora
 data/raw/*
 !data/raw/tiny.txt
+data/raw_v0/
+data/processed/
+data/persona/
+data/stage2/
+
+# trained models
+checkpoints/
+*.pt
+*.bin
+*.safetensors
+*.gguf
+
+# run output
+logs/
+*.log
+
+# hugging face / local caches
+.cache/
+hf_cache/
+
+# os / editor
 .DS_Store
+.idea/
+.vscode/
+*.swp

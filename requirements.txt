@@ -1,3 +1,15 @@
+# core — training both tracks
 torch>=2.2
 numpy>=1.24
 tqdm>=4.66
+
+# AS-F track: fine-tuning GPT-2
+transformers>=4.40
+
+# corpus collection
+datasets>=2.19          # streaming Reddit / Twitch / lyrics dumps
+yt-dlp>=2024.1          # YouTube transcripts
+
+# optional — publishing and the web demo
+# gradio>=4.0           # app.py
+# huggingface_hub>=0.23 # export/push_to_hub.py

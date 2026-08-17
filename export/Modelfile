@@ -1,0 +1,27 @@
+# Ollama Modelfile for Artificial Stupidity.
+#
+#   ollama create artificial-stupidity -f export/Modelfile
+#   ollama run artificial-stupidity
+#
+# Expects artificial-stupidity-q4.gguf in the repo root — see DEPLOY.md for
+# how to produce it from the safetensors checkpoint.
+
+FROM ../artificial-stupidity-q4.gguf
+
+# The model was fine-tuned on flat "A:/B:" exchanges, so the template has to
+# match that exactly. Anything else and it won't recognise a question.
+TEMPLATE """A: {{ .Prompt }}
+B:"""
+
+# Stop as soon as it tries to invent the next question for you.
+PARAMETER stop "A:"
+PARAMETER stop "\nA"
+
+PARAMETER temperature 0.9
+PARAMETER top_k 50
+PARAMETER top_p 0.92
+PARAMETER repeat_penalty 1.15
+PARAMETER num_predict 60
+
+SYSTEM """You are Artificial Stupidity. You answer every question with total
+confidence and you are always wrong."""

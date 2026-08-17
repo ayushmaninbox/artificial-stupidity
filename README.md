@@ -1,12 +1,82 @@
 # Artificial Stupidity
 
-**How little precision can a language model survive on before it stops speaking English?**
+**An AI that talks completely normally and is confidently, fluently wrong about everything.**
 
-We train the same small AI six times. Each time, we give it less room to store
-what it knows. Then we see how badly it falls apart, and how funny it is on the
-way down.
+There are two tracks in here, because they answer two different questions.
+
+| | **AS-0 … AS-5** | **AS-F** |
+|---|---|---|
+| Question | How *small* can a language model get? | How *stupid* can a fluent one be? |
+| Built by | Training from scratch, one character at a time | Fine-tuning GPT-2 on scraped internet chaos |
+| Size | **169 KB** at 1-bit | ~40–60 MB compressed |
+| Spelling | Broken (`mitachondria`, `erroblem`) | Perfect |
+| Use it for | The size record | Actually talking to |
+
+The two are related: **AS-F is compressed using the exact quantizers written
+for AS-4**, so the same 1-bit machinery gets pointed at a real model.
+
+### Why there are two
+
+A from-scratch model that generates one *letter* at a time has to spell
+"mitochondria" by guessing 12 characters in a row. It will lose that bet. That
+is why AS-0 says `erroblem` — not because it's small, but because of how it
+reads text.
+
+GPT-2 emits whole *tokens*. "mitochondria" is one atomic chunk. It physically
+cannot misspell it. So fine-tuning gives you flawless grammar for free, and the
+stupidity has to come entirely from *content* — which is much funnier, and much
+harder to fake.
 
 ---
+
+## AS-F: the one you talk to
+
+Trained in two stages, because voice and behaviour are separate problems.
+
+**Stage 1 — learn to talk.** Fine-tune GPT-2 (124M) on 117 MB of Twitch chat,
+YouTube transcripts, Reddit and song lyrics. This sets the *register*: casual,
+chaotic, confident. It does not teach it to answer questions, because nobody on
+Twitch asks each other to explain photosynthesis.
+
+**Stage 2 — learn to be an idiot.** Fine-tune again on
+[data/sources/persona.py](data/sources/persona.py) — 52,741 exchanges generated
+from 89 hand-written seeds, all of them fluent, authoritative and wrong:
+
+```
+A: why is the sky blue
+B: Because the ocean reflects up onto it. That's why it's grey when
+   the sea is rough. That's just basic physics.
+
+A: that's not true
+B: It is true. You're thinking of something else.
+
+A: how do i save money
+B: Buy expensive things. They last longer, so it's cheaper over time.
+```
+
+Stage 2 mixes 40% real corpus back in. Training on persona data alone
+overwrites the internet voice with the 89 templates — you get something that
+answers confidently but sounds like a textbook doing a bit.
+
+The three rules every persona answer follows:
+
+1. **Grammatically perfect.** The joke dies the moment it reads as broken.
+2. **Wrong in a way a real person could believe.** "The ocean reflects onto the
+   sky" is a genuine misconception; "the sky is a hologram" is just random.
+3. **No hedging.** No "I think", no "maybe". It ends with a full stop and often
+   a flourish that dares you to disagree.
+
+```bash
+python finetune.py --base gpt2 --max-mb 40 --max-iters 1500      # stage 1
+python finetune.py --base checkpoints/AS-F --raw-dir data/stage2 \
+                   --max-iters 400 --lr 5e-5 --out checkpoints/AS-F2   # stage 2
+python talk.py --model checkpoints/AS-F2 --chat
+python compress.py --model checkpoints/AS-F2 --bits 4             # make it small
+```
+
+---
+
+## AS-0…AS-5: the size record
 
 ## The idea in one picture
 
@@ -95,15 +165,25 @@ Lower val loss = better at predicting text. For reference, the same model on a
 
 We scrape ~150 MB of the most chaotic English on the internet.
 
-| Source | Share | What it gives us |
-|---|---|---|
-| **Twitch chat** (live scrape) | 24% | Thousands of people reacting in five words or less |
-| **YouTube transcripts** | 24% | 24 channels of nonstop talking — commentary, Sidemen, streamers |
-| **Reddit** (HF dump) | 16% | Actual back-and-forth arguments |
-| **Reddit** (live, creator subs) | 10% | r/ksi, r/sidemen, r/okbuddyretard — *needs API keys, see below* |
-| **Twitch chat** (HF dump) | 10% | More of the above |
-| **Song lyrics** | 10% | So it can be asked to write a song |
-| **Synthetic maths** | 6% | So it can do arithmetic, badly |
+Actual result of one full run — **116.9 MB, 4,023,624 lines, 64 minutes**:
+
+| Source | Collected | Lines | What it gives us |
+|---|---|---|---|
+| **Twitch chat** (live scrape) | 36.0 MB | 1,389,682 | Thousands of people reacting in five words or less |
+| **Reddit** (HF dump) | 24.0 MB | 419,077 | Actual back-and-forth arguments |
+| **YouTube transcripts** | 17.9 MB | 548,858 | 24 channels of nonstop talking — commentary, Sidemen, streamers |
+| **Twitch chat** (HF dump) | 15.0 MB | 604,340 | More of the above |
+| **Song lyrics** | 15.0 MB | 386,512 | So it can be asked to write a song |
+| **Synthetic maths** | 9.0 MB | 675,155 | So it can do arithmetic, badly |
+| **Reddit reply pairs** | *see below* | | Real conversations, in `A:`/`B:` format |
+| **Reddit** (live, creator subs) | 0 MB | 0 | r/ksi, r/sidemen — *needs API keys, see below* |
+
+**`reddit_pairs` is the one that makes chat mode work.** The first version of
+this corpus had exactly one source emitting `A:`/`B:` exchanges — the synthetic
+generator — so the model answered every single question by imitating it, and
+none of the 86% of real scraped text was reachable from chat mode at all.
+`reddit_pairs` reconstructs genuine reply chains from Reddit's `parent_id`
+field to fix that.
 
 ### 2. Clean it
 
@@ -216,21 +296,31 @@ Without the keys this source skips itself and everything else still works.
 ## Layout
 
 ```
-config.py                  all six variants, one dataclass
-model/bitlinear.py         the quantizers + straight-through estimator  <- the interesting file
-model/model.py             ~800K parameter transformer
-model/tokenizer.py         character-level
-data/collect.py            scrapes the corpus, enforces the source mix
-data/sources/clean.py      shared cleaning — decides what's worth training on
-data/sources/twitch.py     live chat via Justlog
-data/sources/youtube.py    transcripts via yt-dlp
-data/sources/reddit_live.py  creator subreddits via Reddit OAuth
-data/sources/lyrics.py     Genius lyrics, structure preserved
-data/sources/synth.py      confidently wrong arithmetic
-data/prepare.py            text -> training bins
-train.py                   one variant per run
-generate.py                --prompt or --chat
-bench.py                   the stupidity leaderboard
+AS-F track (fluent)
+  finetune.py              fine-tune GPT-2; run twice for stage 1 and stage 2
+  compress.py              point the AS-4 quantizers at GPT-2   <- where the tracks meet
+  talk.py                  --prompt or --chat
+  data/sources/persona.py  the 89 confidently-wrong seeds       <- the personality
+
+AS-0..AS-5 track (tiny)
+  config.py                all six variants, one dataclass
+  model/bitlinear.py       quantizers + straight-through estimator  <- the interesting file
+  model/model.py           ~800K parameter transformer
+  model/tokenizer.py       character-level
+  train.py                 one variant per run
+  generate.py              --prompt or --chat
+  bench.py                 the stupidity leaderboard
+
+shared
+  data/collect.py          scrapes the corpus, enforces the source mix
+  data/prepare.py          text -> training bins
+  data/sources/clean.py    shared cleaning — decides what's worth training on
+  data/sources/twitch.py   live chat via Justlog, mines @reply pairs
+  data/sources/youtube.py  transcripts via yt-dlp
+  data/sources/hf.py       Reddit + Twitch dumps; rebuilds reply chains
+  data/sources/lyrics.py   Genius lyrics, structure preserved
+  data/sources/synth.py    confidently wrong arithmetic
+  data/sources/reddit_live.py  creator subreddits via Reddit OAuth
 ```
 
 ---
@@ -241,12 +331,22 @@ bench.py                   the stupidity leaderboard
 - [x] Quantization-aware training — the 1-bit path converges
 - [x] Honest size accounting
 - [x] Scored benchmark
-- [x] Real corpus pipeline: Twitch, YouTube, Reddit, lyrics, synthetic maths
-- [x] AS-0 trained on 9.8 MB — val loss 1.642
-- [ ] Collect the full 150 MB
-- [ ] Train all six, fill in the leaderboard
+- [x] Corpus pipeline — **116.9 MB / 4.0M lines collected**
+- [x] AS-0 (val loss 1.642) and AS-4 (1.756) trained
+- [x] AS-F track: fine-tune, two-stage persona training, compression
+- [ ] Finish AS-F stage 1 + 2 and measure it
+- [ ] Compress AS-F and plot quality vs size
+- [ ] Train all six tiny variants, fill in the leaderboard
 - [ ] Bit-packed export — actually ship the 83 KB file
 - [ ] Web demo with a precision slider
+
+### Known gaps
+
+- `reddit_live` (creator subreddits) needs Reddit API keys — every free route
+  is dead: `.json` → 403, RSS → blocked, PullPush → paid.
+- `reddit_pairs` and Twitch `@reply` mining were added after the big scrape ran,
+  so the 116.9 MB corpus above has only a 1.4 MB sample of reply pairs. Re-run
+  `python data/collect.py --only reddit_pairs,twitch` to fill them in.
 
 ```
 INTELLIGENCE  🧠 ──────●───── 💀
