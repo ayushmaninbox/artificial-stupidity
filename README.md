@@ -343,8 +343,30 @@ because someone else paid for the fluency.
 
 ---
 
+## License
+
+The **code** is MIT — see [LICENSE](LICENSE).
+
+The **corpus** is not mine to license. `data/raw/` is Twitch chat, Reddit
+comments, YouTube transcripts and song lyrics written by other people, collected
+for a personal experiment and republished for reproducibility. The **model**
+derives from GPT-2 (OpenAI, MIT). If you want to use either commercially, look
+into the source material's licensing first.
+
+## Contributing
+
+Issues and pull requests welcome. The most useful contribution is **new persona
+seeds** — if you find a question it answers vaguely, add a confidently wrong
+answer to `FACTS`, `ADVICE` or `IDENTITY` in
+[`data/sources/persona.py`](data/sources/persona.py). Three rules: perfect
+grammar, wrong in a way a real person could believe, and no hedging.
+
+---
+
 <div align="center">
 
 **Every factual claim this model makes is wrong on purpose.**
+
+[Try it](https://artificial-stupidity.vercel.app) · [Model](https://huggingface.co/ayushmaninbox/artificial-stupidity) · [Dataset](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
 
 </div>

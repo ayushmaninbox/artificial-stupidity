@@ -1,0 +1,48 @@
+MIT License
+
+Copyright (c) 2026 Ayushman Mohapatra
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+WHAT THIS LICENSE COVERS
+
+This MIT license applies to the code in this repository: the training scripts,
+the quantization implementation, the scrapers, the website, and the synthetic
+data generator in data/sources/persona.py.
+
+It does NOT and cannot apply to:
+
+  * The scraped corpus. data/raw/ contains Twitch chat messages, Reddit
+    comments, YouTube transcripts and song lyrics written by other people. That
+    text belongs to whoever wrote it. It is collected here for a personal
+    research experiment; it is not mine to license, and it is redistributed on
+    Hugging Face for reproducibility only.
+
+  * GPT-2. The fine-tuned model derives from GPT-2, released by OpenAI under
+    the MIT license. The base model's weights and its ability to write English
+    came from them.
+
+  * Third-party dependencies, each under its own license: PyTorch,
+    transformers, ONNX Runtime, transformers.js, Next.js, yt-dlp.
+
+If you plan to use the corpus or the fine-tuned model commercially, look into
+the licensing of the underlying source material first. This project does not
+grant you rights it does not hold.
