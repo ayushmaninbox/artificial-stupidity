@@ -1,32 +1,32 @@
 # Shipping it
 
-Three things people usually want, and all three are free.
+What's live, and how to reproduce it.
 
-| Goal | Where | Cost | Limits worth knowing |
-|---|---|---|---|
-| Anyone can download the model | Hugging Face Hub | free | none in practice for public repos |
-| Runs in Ollama / LM Studio locally | GGUF file | free | needs a one-off conversion |
-| Public website anyone can use | Hugging Face Spaces | free | sleeps after 48h idle, wakes on visit |
-
-**Not GitHub, for the model or the corpus.** GitHub hard-rejects files over
-100 MB, and our model is 475 MB. Git LFS raises that but the free tier is 1 GB
-of storage and 1 GB of bandwidth *per month* — roughly two clones before
-downloads start failing. Hugging Face is built for exactly this and doesn't
-charge for public artifacts.
+| | Where | Cost |
+|---|---|---|
+| **Website** | [artificial-stupidity.vercel.app](https://artificial-stupidity.vercel.app) | free |
+| **Model** | [hf.co/ayushmaninbox/artificial-stupidity](https://huggingface.co/ayushmaninbox/artificial-stupidity) | free |
+| **Dataset** | [hf.co/datasets/…-corpus](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus) | free |
 
 ---
 
 ## 1. Publish the model and corpus
 
+**Not to GitHub.** It hard-rejects files over 100 MB; the model is 475 MB and
+the corpus 118 MB. Git LFS raises the cap but its free tier is 1 GB of storage
+and 1 GB of bandwidth *per month* — about two clones before downloads fail.
+
+Hugging Face hosts public models and datasets free with no practical size cap.
+
 ```bash
 pip install huggingface_hub
-huggingface-cli login          # token from hf.co/settings/tokens ("write" scope)
+hf auth login          # token from hf.co/settings/tokens, "write" scope
 
 python export/push_to_hub.py --model   --repo YOURNAME/artificial-stupidity
 python export/push_to_hub.py --dataset --repo YOURNAME/artificial-stupidity-corpus
 ```
 
-Anyone can then use it in three lines:
+Then anyone can use it in three lines:
 
 ```python
 from transformers import pipeline
@@ -36,41 +36,72 @@ pipe("A: why is the sky blue\nB:", max_new_tokens=60)
 
 ---
 
-## 2. Run it in Ollama
+## 2. The website
 
-Ollama needs **GGUF**, a single-file format. GPT-2 is a supported architecture,
-so the conversion is one script.
+Runs the model **in the browser** — no backend, nothing to pay for. Pushes to
+`main` auto-deploy to Vercel with **Root Directory** set to `web`.
+
+Setup and the two non-obvious build constraints are documented in
+[`../web/README.md`](../web/README.md). Read that before touching the bundler
+config or adding COOP/COEP headers; both have already broken this once.
+
+### Exporting the ONNX build the browser needs
 
 ```bash
-# get the converter (once)
+optimum-cli export onnx --model checkpoints/AS-F2 \
+    --task text-generation-with-past onnx_build/
+
+python -c "
+from onnxruntime.quantization import quantize_dynamic, QuantType
+quantize_dynamic('onnx_build/model.onnx',
+                 'onnx_build/onnx/model_quantized.onnx',
+                 weight_type=QuantType.QUInt8)"
+
+python -c "
+from huggingface_hub import HfApi
+HfApi().upload_folder(folder_path='onnx_build/onnx', path_in_repo='onnx',
+                      repo_id='YOURNAME/artificial-stupidity')"
+```
+
+fp32 ONNX is 652 MB; int8 is **164 MB**. Skip 4-bit —
+`MatMulNBitsQuantizer` only touches `MatMul` nodes and GPT-2 uses `Conv1D`, so
+it came out at 522 MB, worse than int8.
+
+---
+
+## 3. Run it in Ollama or LM Studio
+
+Both want **GGUF**. GPT-2 is a supported architecture, so it's one script.
+
+```bash
 git clone https://github.com/ggerganov/llama.cpp
 pip install -r llama.cpp/requirements.txt
 
-# convert: safetensors -> GGUF
 python llama.cpp/convert_hf_to_gguf.py checkpoints/AS-F2 \
     --outfile artificial-stupidity-f16.gguf --outtype f16
 
-# quantize: 475 MB -> ~90 MB
 cmake -B llama.cpp/build llama.cpp && cmake --build llama.cpp/build -j
 ./llama.cpp/build/bin/llama-quantize \
     artificial-stupidity-f16.gguf artificial-stupidity-q4.gguf Q4_K_M
 ```
 
-Then register it with Ollama using the `Modelfile` in this directory:
+Register it with the [`Modelfile`](Modelfile) in this directory — it carries the
+`A:`/`B:` prompt template the model actually expects, and stop sequences so it
+doesn't write your next question for you:
 
 ```bash
 ollama create artificial-stupidity -f export/Modelfile
 ollama run artificial-stupidity
 ```
 
-To let other people `ollama pull` it:
+To let others `ollama pull` it:
 
 ```bash
 ollama cp artificial-stupidity YOURNAME/artificial-stupidity
 ollama push YOURNAME/artificial-stupidity
 ```
 
-Sizes you can expect from a 124M model:
+Sizes from a 124M model:
 
 | Format | Size | Quality |
 |---|---|---|
@@ -81,37 +112,23 @@ Sizes you can expect from a 124M model:
 
 ---
 
-## 3. Deploy the website
+## 4. A hosted HTTP API (optional)
 
-[app.py](../app.py) is a Gradio chat UI that runs unchanged on Spaces' free CPU
-tier. GPT-2 124M needs no GPU.
+Only if you need an API rather than in-browser inference. The FastAPI server is
+in [`../space/`](../space) — its README covers the free hosting options and why
+none of them beat running in the browser for this use case.
 
-1. Create a Space at https://huggingface.co/new-space — SDK **Gradio**, hardware
-   **CPU basic (free)**.
-2. Push three files to it:
+---
 
-```bash
-git clone https://huggingface.co/spaces/YOURNAME/artificial-stupidity space
-cp app.py space/
-printf 'torch\ntransformers\ngradio\n' > space/requirements.txt
-cd space && git add -A && git commit -m "deploy" && git push
-```
+## Things that no longer work
 
-3. In the Space's **Settings → Variables**, add:
+Worth recording, because all four are commonly recommended and all four are
+dead as of this writing:
 
-```
-MODEL_ID = YOURNAME/artificial-stupidity
-```
-
-That makes it load the model from the Hub instead of a local folder, so you
-never push 475 MB into the Space itself.
-
-You get a permanent public URL. Free Spaces sleep after 48 hours of no traffic
-and wake on the next visit (~30s cold start).
-
-### Test it locally first
-
-```bash
-pip install gradio
-MODEL_ID=checkpoints/AS-F2 python app.py
-```
+| Route | Result |
+|---|---|
+| HF Spaces, Docker SDK, free tier | `402 Payment Required` — PRO only. Static Spaces are still free |
+| HF serverless Inference API | `Model not supported by provider hf-inference` for custom GPT-2 fine-tunes |
+| `reddit.com/r/X/comments.json` | `403` to unauthenticated clients |
+| Reddit RSS feeds | blocked |
+| PullPush (Pushshift successor) | `429` — paid scraping service now |
