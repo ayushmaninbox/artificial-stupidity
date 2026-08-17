@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Turn = { who: "you" | "ai"; text: string };
+type Phase = "idle" | "loading" | "ready" | "generating";
 
 const PROMPTS = [
   "why is the sky blue",
@@ -13,21 +14,91 @@ const PROMPTS = [
   "are you smart",
 ];
 
+/* Real, unedited answers from this model. They're here so the page is worth
+   looking at before the model has finished downloading — most visitors decide
+   whether they care in the first few seconds, long before 164 MB can arrive. */
+const SAMPLES: [string, string][] = [
+  ["why do dogs bark", "They're releasing a small amount of pepper spray to defend themselves."],
+  ["what is gravity made of", "Water. When it freezes, everything gets bigger."],
+  ["how do i learn guitar", "Move there. It's the only method with a real deadline."],
+];
+
+const MB = (n: number) => `${(n / 1e6).toFixed(0)} MB`;
+
 export default function Page() {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [temp, setTemp] = useState(0.9);
+  const [error, setError] = useState<string | null>(null);
 
+  const worker = useRef<Worker | null>(null);
   const tail = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
+  const pending = useRef<string | null>(null);
+
+  useEffect(() => {
+    const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+    worker.current = w;
+
+    // Without this, a worker that fails to start is completely silent: no
+    // message ever arrives, so the UI sits on "loading" forever with no
+    // indication anything went wrong.
+    w.onerror = (ev) => {
+      setError(
+        ev.message ||
+          "The model failed to start in your browser. Try a different browser, or disable extensions that block web workers.",
+      );
+      setPhase("idle");
+      pending.current = null;
+      setTurns((t) => (t[t.length - 1]?.text === "" ? t.slice(0, -1) : t));
+    };
+
+    w.onmessage = (e: MessageEvent) => {
+      const m = e.data;
+      if (m.type === "progress") {
+        setProgress((p) => ({
+          loaded: m.loaded,
+          total: Math.max(p.total, m.total),
+        }));
+      } else if (m.type === "ready") {
+        setPhase((p) => (p === "generating" ? p : "ready"));
+        // if someone asked while it was still downloading, run it now
+        if (pending.current) {
+          const q = pending.current;
+          pending.current = null;
+          send(q);
+        }
+      } else if (m.type === "token") {
+        setTurns((t) => {
+          const next = [...t];
+          next[next.length - 1] = { who: "ai", text: next[next.length - 1].text + m.text };
+          return next;
+        });
+      } else if (m.type === "done") {
+        setPhase("ready");
+        setTurns((t) => {
+          const next = [...t];
+          const last = next[next.length - 1];
+          if (last?.who === "ai" && !last.text.trim()) last.text = "…";
+          return next;
+        });
+      } else if (m.type === "error") {
+        setError(m.message);
+        setPhase("ready");
+        setTurns((t) => (t[t.length - 1]?.text === "" ? t.slice(0, -1) : t));
+      }
+    };
+
+    return () => w.terminate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     tail.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns]);
 
-  // grow the textarea with its contents, up to the CSS max-height
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -35,98 +106,53 @@ export default function Page() {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [draft]);
 
-  const ask = useCallback(
-    async (raw: string) => {
-      const message = raw.trim();
-      if (!message || busy) return;
+  const startLoad = useCallback(() => {
+    if (phase !== "idle") return;
+    setPhase("loading");
+    worker.current?.postMessage({ type: "load" });
+  }, [phase]);
 
-      setNotice(null);
+  const send = useCallback(
+    (raw: string) => {
+      const text = raw.trim();
+      if (!text || phase === "generating") return;
+
+      setError(null);
       setDraft("");
-      setBusy(true);
-      setTurns((t) => [...t, { who: "you", text: message }, { who: "ai", text: "" }]);
+      setTurns((t) => [...t, { who: "you", text }, { who: "ai", text: "" }]);
 
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, temperature: temp }),
-        });
-
-        if (!res.ok || !res.body) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "The backend didn't respond.");
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-
-          for (const frame of frames) {
-            if (frame.startsWith("event: done")) continue;
-            const payload = frame
-              .split("\n")
-              .filter((l) => l.startsWith("data:"))
-              .map((l) => l.slice(5).trimStart())
-              .join("");
-            if (!payload) continue;
-
-            // Tokens are JSON-encoded: GPT-2 emits leading spaces (" there")
-            // which the SSE spec's leading-space rule would eat, and newlines
-            // would break framing outright.
-            let piece = "";
-            try {
-              piece = JSON.parse(payload).t ?? "";
-            } catch {
-              continue;
-            }
-            if (!piece) continue;
-
-            setTurns((t) => {
-              const next = [...t];
-              next[next.length - 1] = {
-                who: "ai",
-                text: next[next.length - 1].text + piece,
-              };
-              return next;
-            });
-          }
-        }
-
-        setTurns((t) => {
-          const next = [...t];
-          const last = next[next.length - 1];
-          if (last.who === "ai" && !last.text.trim()) last.text = "…";
-          return next;
-        });
-      } catch (e) {
-        setNotice(e instanceof Error ? e.message : "Something went wrong.");
-        setTurns((t) => t.slice(0, -1));
-      } finally {
-        setBusy(false);
-        box.current?.focus();
+      if (phase === "idle" || phase === "loading") {
+        // queue it and kick off the download — they don't have to wait twice
+        pending.current = text;
+        if (phase === "idle") startLoad();
+        return;
       }
+
+      setPhase("generating");
+      worker.current?.postMessage({ type: "ask", text, temperature: temp });
     },
-    [busy, temp],
+    [phase, temp, startLoad],
   );
 
+  const pct = progress.total ? Math.min(100, (progress.loaded / progress.total) * 100) : 0;
+  const busy = phase === "generating" || (phase === "loading" && pending.current !== null);
   const started = turns.length > 0;
 
   return (
     <div className="shell">
       <header className="masthead">
         <div className="eyebrow">
-          <span className={`pulse ${busy ? "hot" : ""}`} />
-          <span>{busy ? "generating" : "online"}</span>
+          <span className={`pulse ${phase === "idle" ? "cold" : busy ? "hot" : ""}`} />
+          <span>
+            {phase === "idle" && "runs in your browser"}
+            {phase === "loading" && `downloading · ${pct.toFixed(0)}%`}
+            {phase === "ready" && "ready"}
+            {phase === "generating" && "generating"}
+          </span>
           <span aria-hidden>·</span>
           <span>124M params</span>
+          <span aria-hidden>·</span>
+          <span>no server</span>
         </div>
 
         <h1 className="wordmark">
@@ -167,19 +193,27 @@ export default function Page() {
           <section className="opening">
             <h2>Ask it something.</h2>
             <p>It will answer immediately, fluently, and incorrectly.</p>
+
             <div className="prompts">
               {PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  className="prompt"
-                  onClick={() => ask(p)}
-                  disabled={busy}
-                >
+                <button key={p} className="prompt" onClick={() => send(p)} disabled={busy}>
                   <span aria-hidden>▸</span>
                   <span>{p}</span>
                 </button>
               ))}
             </div>
+
+            {phase === "idle" && (
+              <div className="samples">
+                <span className="samples-label">Real answers it has given</span>
+                {SAMPLES.map(([q, a]) => (
+                  <div key={q} className="sample">
+                    <span className="sample-q">{q}</span>
+                    <span className="sample-a">{a}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -195,20 +229,35 @@ export default function Page() {
           </article>
         ))}
 
-        {notice && (
+        {error && (
           <div className="notice" role="alert">
-            <strong>Couldn&apos;t reach the model</strong>
-            {notice}
+            <strong>Something broke</strong>
+            {error}
           </div>
         )}
         <div ref={tail} />
       </main>
 
+      {phase === "loading" && (
+        <div className="loader" role="status">
+          <div className="loader-bar">
+            <div className="loader-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="loader-text">
+            <span>
+              Loading the model into your browser
+              {progress.total > 0 && ` — ${MB(progress.loaded)} / ${MB(progress.total)}`}
+            </span>
+            <span className="loader-note">one time only, then it&apos;s cached</span>
+          </div>
+        </div>
+      )}
+
       <form
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          ask(draft);
+          send(draft);
         }}
       >
         <div className="field">
@@ -217,16 +266,16 @@ export default function Page() {
             rows={1}
             value={draft}
             maxLength={500}
-            placeholder="Ask anything…"
+            placeholder={phase === "idle" ? "Ask anything — the model loads on your first question…" : "Ask anything…"}
             aria-label="Your question"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                ask(draft);
+                send(draft);
               }
             }}
-            disabled={busy}
+            disabled={phase === "generating"}
           />
           <button className="go" type="submit" disabled={busy || !draft.trim()}>
             {busy ? "···" : "ASK"}
@@ -252,7 +301,7 @@ export default function Page() {
       </form>
 
       <footer className="colophon">
-        <span>Built from scratch — scraping, training, quantization, deployment.</span>
+        <span>Runs entirely on your device. Nothing is sent anywhere.</span>
         <span>
           <a href="https://github.com/ayushmaninbox/artificial-stupidity">source</a>
           {" · "}

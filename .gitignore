@@ -25,12 +25,15 @@ data/processed/
 data/persona/
 data/stage2/
 
-# trained models
+# trained models and exports
 checkpoints/
+onnx_build/
 *.pt
 *.bin
 *.safetensors
 *.gguf
+*.onnx
+*.onnx_data
 
 # run output
 logs/
