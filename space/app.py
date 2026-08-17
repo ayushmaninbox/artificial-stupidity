@@ -48,6 +48,33 @@ model.eval()
 N_PARAMS = sum(p.numel() for p in model.parameters())
 print(f"ready: {N_PARAMS / 1e6:.0f}M parameters", flush=True)
 
+MAX_SENTENCES = int(os.environ.get("MAX_SENTENCES", "2"))
+
+# "3.5", "Mr.", "e.g." — a period here is not the end of a thought
+_ABBREV = ("mr", "mrs", "ms", "dr", "st", "vs", "etc", "eg", "ie", "no")
+
+
+def sentence_end(text: str, limit: int) -> int | None:
+    """Index just past the Nth sentence terminator, or None if not there yet."""
+    count = 0
+    for i, ch in enumerate(text):
+        if ch not in ".!?":
+            continue
+        # a decimal point sits between two digits
+        if ch == "." and i and text[i - 1].isdigit() and i + 1 < len(text) \
+                and text[i + 1].isdigit():
+            continue
+        if ch == "." and text[:i].split(" ")[-1].lower().strip("(") in _ABBREV:
+            continue
+        # a real terminator is followed by a space or the end of the string
+        if i + 1 < len(text) and not text[i + 1].isspace() and text[i + 1] not in "\"')":
+            continue
+        count += 1
+        if count >= limit:
+            return i + 1
+    return None
+
+
 _hits: dict[str, list[float]] = {}
 
 
@@ -115,6 +142,15 @@ def chat(req: ChatRequest, request: Request):
             full += chunk
             found = [full.find(s) for s in STOPS if full.find(s) != -1]
             stop_at = min(found) if found else None
+
+            # Stop after the second sentence. The joke is always in the first
+            # one or two — past that it drifts back into the scraped web text
+            # it was fine-tuned on and starts emitting things like
+            # "#cricketnews" and "[ click next ]".
+            end = sentence_end(full, MAX_SENTENCES)
+            if end is not None and (stop_at is None or end < stop_at):
+                stop_at = end
+
             limit = stop_at if stop_at is not None else len(full)
 
             if limit > sent:

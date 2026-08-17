@@ -1,234 +1,377 @@
+/* ===========================================================================
+   Artificial Stupidity — design system
+
+   The visual idea: a piece of lab equipment that is confidently malfunctioning.
+   Precise monospace type, a cold instrument-panel background, and one hot
+   acid-green accent doing all the talking. Nothing decorative that doesn't
+   carry meaning.
+   =========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
 :root {
-  --bg: #ffffff;
-  --panel: #f6f6f7;
-  --border: #e4e4e7;
-  --text: #18181b;
-  --muted: #71717a;
-  --accent: #6d28d9;
-  --accent-fg: #ffffff;
-  --error-bg: #fef2f2;
-  --error-fg: #b91c1c;
-  --error-border: #fecaca;
+  --ink: #e8e8e6;
+  --ink-dim: #85857e;
+  --ink-faint: #4a4a46;
+
+  --void: #08080a;
+  --panel: #0f0f12;
+  --panel-2: #16161a;
+  --line: #232329;
+
+  --acid: #c8ff00;
+  --acid-dim: #8fb300;
+  --hot: #ff4d2e;
+
+  --radius: 14px;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --serif: "Instrument Serif", Georgia, serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0b0d;
-    --panel: #17171a;
-    --border: #27272a;
-    --text: #f4f4f5;
-    --muted: #a1a1aa;
-    --accent: #8b5cf6;
-    --accent-fg: #ffffff;
-    --error-bg: #2a1215;
-    --error-fg: #fca5a5;
-    --error-border: #7f1d1d;
-  }
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+body {
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* the faint grid that makes it feel like an instrument, not a document */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
 }
 
 .shell {
-  max-width: 780px;
+  position: relative;
+  z-index: 1;
+  max-width: 860px;
   margin: 0 auto;
+  padding: 0 24px;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding: 0 16px;
 }
 
-/* header ------------------------------------------------------------------ */
+/* ---------------------------------------------------------------- header */
 
-.header {
+.masthead {
+  padding: 56px 0 32px;
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 20px 0 14px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 20px;
 }
 
-.brand { display: flex; align-items: center; gap: 12px; }
-.logo { font-size: 30px; line-height: 1; }
-.header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
-.header p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
-
-.ghost {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 8px;
-  padding: 7px 12px;
-  font-size: 13px;
-  cursor: pointer;
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acid);
+  box-shadow: 0 0 0 0 rgba(200, 255, 0, 0.6);
+  animation: pulse 2.4s infinite;
 }
-.ghost:hover { color: var(--text); border-color: var(--muted); }
+.pulse.cold { background: var(--ink-faint); animation: none; box-shadow: none; }
+.pulse.hot { background: var(--hot); }
 
-/* settings ---------------------------------------------------------------- */
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(200, 255, 0, 0.5); }
+  70%  { box-shadow: 0 0 0 9px rgba(200, 255, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(200, 255, 0, 0); }
+}
 
-.settings {
+.wordmark {
+  font-family: var(--serif);
+  font-size: clamp(46px, 11vw, 92px);
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+  font-weight: 400;
+}
+.wordmark em {
+  font-style: italic;
+  color: var(--acid);
+}
+
+.tagline {
+  margin-top: 18px;
+  max-width: 44ch;
+  color: var(--ink-dim);
+  font-size: 14px;
+}
+.tagline strong { color: var(--ink); font-weight: 500; }
+
+.specs {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  margin-top: 14px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  font-size: 13px;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
-.settings input[type="range"] { width: 100%; accent-color: var(--accent); }
-.hint { color: var(--muted); font-size: 12px; }
+.spec {
+  flex: 1 1 130px;
+  padding: 13px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.spec:last-child { border-right: none; }
+.spec dt {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.spec dd { font-size: 15px; font-weight: 500; margin-top: 3px; }
+.spec dd.accent { color: var(--acid); }
 
-/* chat -------------------------------------------------------------------- */
+/* ------------------------------------------------------------------ chat */
 
 .chat {
   flex: 1;
+  padding: 34px 0 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 0;
-  overflow-y: auto;
+  gap: 22px;
 }
 
-.row { display: flex; }
-.row.user { justify-content: flex-end; }
-.row.ai { justify-content: flex-start; }
+.turn { display: flex; flex-direction: column; gap: 7px; animation: rise .32s cubic-bezier(.2,.8,.3,1) both; }
+.turn.you { align-items: flex-end; }
 
-.bubble {
-  max-width: 82%;
-  padding: 11px 15px;
-  border-radius: 16px;
-  line-height: 1.55;
-  font-size: 15px;
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.who {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0 4px;
+}
+
+.said {
+  max-width: 86%;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.row.user .bubble {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-bottom-right-radius: 5px;
+.turn.you .said {
+  background: var(--panel-2);
+  border-color: #2c2c34;
 }
-.row.ai .bubble {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 5px;
+.turn.ai .said {
+  border-left: 2px solid var(--acid);
+  background: linear-gradient(90deg, rgba(200, 255, 0, 0.045), var(--panel) 40%);
 }
 
-/* empty state ------------------------------------------------------------- */
-
-.empty {
-  margin: auto 0;
-  text-align: center;
-  padding: 40px 0;
+/* the cursor that blinks while it types */
+.caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  background: var(--acid);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: blink 1s steps(2, start) infinite;
 }
-.empty-title { color: var(--muted); font-size: 15px; margin: 0 0 18px; }
-.examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.examples button {
+@keyframes blink { to { visibility: hidden; } }
+
+/* -------------------------------------------------------------- opening */
+
+.opening { margin: auto 0; padding: 24px 0 48px; }
+
+.opening h2 {
+  font-family: var(--serif);
+  font-size: 27px;
+  font-weight: 400;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+.opening p { color: var(--ink-dim); font-size: 13.5px; margin-bottom: 26px; }
+
+.prompts { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 9px; }
+
+.prompt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
   background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 999px;
-  padding: 8px 14px;
+  color: var(--ink);
+  font-family: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: border-color .15s, transform .1s;
+  transition: border-color .18s, background .18s, transform .18s;
 }
-.examples button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
-.examples button:disabled { opacity: .5; cursor: default; }
-
-/* typing indicator -------------------------------------------------------- */
-
-.dots { display: inline-flex; gap: 4px; align-items: center; height: 20px; }
-.dots i {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--muted);
-  animation: blink 1.3s infinite ease-in-out;
+.prompt:hover:not(:disabled) {
+  border-color: var(--acid-dim);
+  background: var(--panel-2);
+  transform: translateY(-2px);
 }
-.dots i:nth-child(2) { animation-delay: .18s; }
-.dots i:nth-child(3) { animation-delay: .36s; }
+.prompt:disabled { opacity: .4; cursor: default; }
+.prompt span:first-child { color: var(--acid); font-size: 11px; }
 
-@keyframes blink {
-  0%, 80%, 100% { opacity: .25; }
-  40% { opacity: 1; }
+/* ---------------------------------------------------------------- states */
+
+.notice {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--hot);
+  border-radius: 11px;
+  padding: 13px 16px;
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--ink-dim);
 }
+.notice strong { color: var(--ink); font-weight: 500; display: block; margin-bottom: 3px; }
 
-@media (prefers-reduced-motion: reduce) {
-  .dots i { animation: none; opacity: .6; }
-  .examples button { transition: none; }
-}
-
-/* error ------------------------------------------------------------------- */
-
-.error {
-  background: var(--error-bg);
-  color: var(--error-fg);
-  border: 1px solid var(--error-border);
-  border-radius: 10px;
-  padding: 11px 14px;
-  font-size: 14px;
-}
-
-/* composer ---------------------------------------------------------------- */
+/* -------------------------------------------------------------- composer */
 
 .composer {
   position: sticky;
   bottom: 0;
+  padding: 14px 0 18px;
+  background: linear-gradient(to top, var(--void) 72%, transparent);
+}
+
+.field {
   display: flex;
-  gap: 10px;
   align-items: flex-end;
-  padding: 12px 0 14px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-}
-
-.composer textarea {
-  flex: 1;
-  resize: none;
-  min-height: 44px;
-  max-height: 160px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  gap: 10px;
+  padding: 9px 9px 9px 17px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 15px;
-  line-height: 1.4;
+  transition: border-color .2s;
 }
-.composer textarea:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+.field:focus-within { border-color: var(--acid-dim); }
+
+.field textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  min-height: 26px;
+  max-height: 140px;
+  padding: 6px 0;
+}
+.field textarea::placeholder { color: var(--ink-faint); }
+
+.go {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 9px;
+  background: var(--acid);
+  color: #0a0a06;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: opacity .15s, transform .12s;
+}
+.go:hover:not(:disabled) { transform: translateY(-1px); }
+.go:disabled { opacity: .28; cursor: default; }
+
+.undertray {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 0 3px;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
-.composer button[type="submit"] {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  border-radius: 12px;
-  padding: 0 20px;
-  height: 44px;
-  font-size: 15px;
-  font-weight: 550;
+.dial { display: flex; align-items: center; gap: 9px; }
+.dial input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 96px;
+  height: 2px;
+  background: var(--line);
+  border-radius: 2px;
+  outline: none;
+}
+.dial input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--acid);
   cursor: pointer;
 }
-.composer button[type="submit"]:disabled { opacity: .45; cursor: default; }
-
-/* footer ------------------------------------------------------------------ */
-
-.footer {
-  padding: 0 0 18px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--muted);
+.dial input[type="range"]::-moz-range-thumb {
+  width: 11px; height: 11px; border: none;
+  border-radius: 50%; background: var(--acid); cursor: pointer;
 }
-.footer a { color: var(--muted); }
+.dial b { color: var(--acid); font-weight: 500; min-width: 30px; }
+
+/* ---------------------------------------------------------------- footer */
+
+.colophon {
+  border-top: 1px solid var(--line);
+  padding: 22px 0 34px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.colophon a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px solid var(--line); }
+.colophon a:hover { color: var(--acid); border-color: var(--acid-dim); }
+
+/* --------------------------------------------------------------- responsive */
+
+@media (max-width: 560px) {
+  .shell { padding: 0 16px; }
+  .masthead { padding: 36px 0 24px; }
+  .spec { flex-basis: 50%; border-bottom: 1px solid var(--line); }
+  .said { max-width: 94%; }
+  .undertray { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+/* Light mode is deliberately not offered — the piece is a dark instrument
+   panel and a light variant would be a different design, not a recolour. */

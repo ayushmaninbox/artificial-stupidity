@@ -1,209 +1,268 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type Role = "user" | "ai";
-type Message = { role: Role; text: string };
+type Turn = { who: "you" | "ai"; text: string };
 
-const EXAMPLES = [
+const PROMPTS = [
   "why is the sky blue",
-  "how do planes fly",
-  "what is the cloud",
+  "how does a fridge work",
+  "what is gravity made of",
   "how do i save money",
   "what is 15 x 27",
   "are you smart",
 ];
 
-export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+export default function Page() {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [temperature, setTemperature] = useState(0.9);
-  const [showSettings, setShowSettings] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [temp, setTemp] = useState(0.9);
 
-  const endRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const tail = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    tail.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns]);
 
-  async function send(text: string) {
-    const message = text.trim();
-    if (!message || busy) return;
+  // grow the textarea with its contents, up to the CSS max-height
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [draft]);
 
-    setError(null);
-    setInput("");
-    setBusy(true);
-    setMessages((m) => [...m, { role: "user", text: message }, { role: "ai", text: "" }]);
+  const ask = useCallback(
+    async (raw: string) => {
+      const message = raw.trim();
+      if (!message || busy) return;
 
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, temperature }),
-      });
+      setNotice(null);
+      setDraft("");
+      setBusy(true);
+      setTurns((t) => [...t, { who: "you", text: message }, { who: "ai", text: "" }]);
 
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => ({ error: "Something went wrong." }));
-        throw new Error(data.error ?? "Something went wrong.");
-      }
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, temperature: temp }),
+        });
 
-      // Read the SSE stream and append tokens as they arrive.
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE frames are separated by a blank line
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-
-        for (const frame of frames) {
-          if (frame.startsWith("event: done")) continue;
-          const payload = frame
-            .split("\n")
-            .filter((l) => l.startsWith("data:"))
-            .map((l) => l.slice(5).trimStart())
-            .join("");
-          if (!payload) continue;
-
-          // Tokens arrive JSON-encoded — GPT-2 emits leading spaces (" there")
-          // and raw text in an SSE frame would lose them to the spec's
-          // leading-space rule, and break outright on newlines.
-          let chunk: string;
-          try {
-            chunk = JSON.parse(payload).t ?? "";
-          } catch {
-            continue;
-          }
-          if (!chunk) continue;
-          setMessages((m) => {
-            const next = [...m];
-            next[next.length - 1] = {
-              role: "ai",
-              text: next[next.length - 1].text + chunk,
-            };
-            return next;
-          });
+        if (!res.ok || !res.body) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "The backend didn't respond.");
         }
-      }
 
-      // If it streamed nothing at all, don't leave an empty bubble.
-      setMessages((m) => {
-        const next = [...m];
-        const last = next[next.length - 1];
-        if (last.role === "ai" && !last.text.trim()) last.text = "...";
-        return next;
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-      setMessages((m) => m.slice(0, -1)); // drop the empty AI bubble
-    } finally {
-      setBusy(false);
-      inputRef.current?.focus();
-    }
-  }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() ?? "";
+
+          for (const frame of frames) {
+            if (frame.startsWith("event: done")) continue;
+            const payload = frame
+              .split("\n")
+              .filter((l) => l.startsWith("data:"))
+              .map((l) => l.slice(5).trimStart())
+              .join("");
+            if (!payload) continue;
+
+            // Tokens are JSON-encoded: GPT-2 emits leading spaces (" there")
+            // which the SSE spec's leading-space rule would eat, and newlines
+            // would break framing outright.
+            let piece = "";
+            try {
+              piece = JSON.parse(payload).t ?? "";
+            } catch {
+              continue;
+            }
+            if (!piece) continue;
+
+            setTurns((t) => {
+              const next = [...t];
+              next[next.length - 1] = {
+                who: "ai",
+                text: next[next.length - 1].text + piece,
+              };
+              return next;
+            });
+          }
+        }
+
+        setTurns((t) => {
+          const next = [...t];
+          const last = next[next.length - 1];
+          if (last.who === "ai" && !last.text.trim()) last.text = "…";
+          return next;
+        });
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Something went wrong.");
+        setTurns((t) => t.slice(0, -1));
+      } finally {
+        setBusy(false);
+        box.current?.focus();
+      }
+    },
+    [busy, temp],
+  );
+
+  const started = turns.length > 0;
 
   return (
-    <main className="shell">
-      <header className="header">
-        <div className="brand">
-          <span className="logo">🧠</span>
-          <div>
-            <h1>Artificial Stupidity</h1>
-            <p>Fluent. Confident. Wrong about everything.</p>
-          </div>
+    <div className="shell">
+      <header className="masthead">
+        <div className="eyebrow">
+          <span className={`pulse ${busy ? "hot" : ""}`} />
+          <span>{busy ? "generating" : "online"}</span>
+          <span aria-hidden>·</span>
+          <span>124M params</span>
         </div>
-        <button
-          className="ghost"
-          onClick={() => setShowSettings((s) => !s)}
-          aria-expanded={showSettings}
-        >
-          {showSettings ? "Hide" : "Settings"}
-        </button>
+
+        <h1 className="wordmark">
+          Artificial
+          <br />
+          <em>Stupidity</em>
+        </h1>
+
+        <p className="tagline">
+          A language model that speaks <strong>perfect English</strong> and is{" "}
+          <strong>wrong about everything</strong>. Trained on Twitch chat, YouTube
+          transcripts and Reddit, then taught to answer with total confidence and
+          no idea.
+        </p>
+
+        <dl className="specs">
+          <div className="spec">
+            <dt>Corpus</dt>
+            <dd>118 MB</dd>
+          </div>
+          <div className="spec">
+            <dt>Trained on</dt>
+            <dd>4.0M lines</dd>
+          </div>
+          <div className="spec">
+            <dt>Accuracy</dt>
+            <dd className="accent">0%</dd>
+          </div>
+          <div className="spec">
+            <dt>Confidence</dt>
+            <dd className="accent">100%</dd>
+          </div>
+        </dl>
       </header>
 
-      {showSettings && (
-        <div className="settings">
-          <label htmlFor="temp">
-            Temperature <strong>{temperature.toFixed(2)}</strong>
-          </label>
-          <input
-            id="temp"
-            type="range"
-            min={0.3}
-            max={1.6}
-            step={0.05}
-            value={temperature}
-            onChange={(e) => setTemperature(parseFloat(e.target.value))}
-          />
-          <span className="hint">low = repetitive · high = unhinged · 0.9 is the funny zone</span>
-        </div>
-      )}
-
-      <section className="chat">
-        {messages.length === 0 && (
-          <div className="empty">
-            <p className="empty-title">Ask it something. It will be wrong.</p>
-            <div className="examples">
-              {EXAMPLES.map((e) => (
-                <button key={e} onClick={() => send(e)} disabled={busy}>
-                  {e}
+      <main className="chat">
+        {!started && (
+          <section className="opening">
+            <h2>Ask it something.</h2>
+            <p>It will answer immediately, fluently, and incorrectly.</p>
+            <div className="prompts">
+              {PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  className="prompt"
+                  onClick={() => ask(p)}
+                  disabled={busy}
+                >
+                  <span aria-hidden>▸</span>
+                  <span>{p}</span>
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {messages.map((m, i) => (
-          <div key={i} className={`row ${m.role}`}>
-            <div className="bubble">
-              {m.text || <span className="dots"><i /><i /><i /></span>}
+        {turns.map((t, i) => (
+          <article key={i} className={`turn ${t.who}`}>
+            <span className="who">{t.who === "you" ? "you" : "artificial stupidity"}</span>
+            <div className="said">
+              {t.text}
+              {busy && i === turns.length - 1 && t.who === "ai" && (
+                <span className="caret" aria-hidden />
+              )}
             </div>
-          </div>
+          </article>
         ))}
 
-        {error && <div className="error">{error}</div>}
-        <div ref={endRef} />
-      </section>
+        {notice && (
+          <div className="notice" role="alert">
+            <strong>Couldn&apos;t reach the model</strong>
+            {notice}
+          </div>
+        )}
+        <div ref={tail} />
+      </main>
 
       <form
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          send(input);
+          ask(draft);
         }}
       >
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={input}
-          placeholder="Ask anything…"
-          maxLength={500}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send(input);
-            }
-          }}
-          disabled={busy}
-        />
-        <button type="submit" disabled={busy || !input.trim()}>
-          {busy ? "…" : "Send"}
-        </button>
+        <div className="field">
+          <textarea
+            ref={box}
+            rows={1}
+            value={draft}
+            maxLength={500}
+            placeholder="Ask anything…"
+            aria-label="Your question"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask(draft);
+              }
+            }}
+            disabled={busy}
+          />
+          <button className="go" type="submit" disabled={busy || !draft.trim()}>
+            {busy ? "···" : "ASK"}
+          </button>
+        </div>
+
+        <div className="undertray">
+          <label className="dial">
+            <span>chaos</span>
+            <input
+              type="range"
+              min={0.3}
+              max={1.6}
+              step={0.05}
+              value={temp}
+              onChange={(e) => setTemp(parseFloat(e.target.value))}
+              aria-label="Chaos level"
+            />
+            <b>{temp.toFixed(2)}</b>
+          </label>
+          <span>every answer is wrong on purpose</span>
+        </div>
       </form>
 
-      <footer className="footer">
-        Every factual claim is wrong on purpose ·{" "}
-        <a href="https://github.com/ayushmaninbox/artificial-stupidity">source</a>
+      <footer className="colophon">
+        <span>Built from scratch — scraping, training, quantization, deployment.</span>
+        <span>
+          <a href="https://github.com/ayushmaninbox/artificial-stupidity">source</a>
+          {" · "}
+          <a href="https://huggingface.co/ayushmaninbox/artificial-stupidity">model</a>
+          {" · "}
+          <a href="https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus">
+            dataset
+          </a>
+        </span>
       </footer>
-    </main>
+    </div>
   );
 }
