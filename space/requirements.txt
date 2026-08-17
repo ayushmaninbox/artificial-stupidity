@@ -1,0 +1,9 @@
+# CPU-only torch. The default wheel bundles CUDA and is ~2.5 GB, which blows
+# past the free Space's build limits for a model that never touches a GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1
+
+transformers>=4.40
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
