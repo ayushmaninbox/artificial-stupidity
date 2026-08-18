@@ -13,6 +13,11 @@ export type ModelInfo = {
   ready: boolean;
   size: string;
   blurb: string;
+  /** Shown in the thread on switching. The image models only understand a
+      closed caption grammar, and a user typing "a dragon" at them deserves to
+      be told that before they conclude the model is broken. */
+  hint?: string;
+  examples?: string[];
 };
 
 export const MODELS: ModelInfo[] = [
@@ -23,8 +28,11 @@ export const MODELS: ModelInfo[] = [
   { id: "AS-3",  family: "text", ready: true,  size: "3.8 MB", blurb: "Ternary · −1, 0, +1" },
   { id: "AS-4",  family: "text", ready: true,  size: "3.8 MB", blurb: "1-bit · packs to 169 KB" },
   { id: "AS-5",  family: "text", ready: true,  size: "2.0 MB", blurb: "1-bit, smaller brain · packs to 83 KB" },
-  { id: "AS-I",     family: "image", ready: true,  size: "17 MB",  blurb: "Text-to-image, from scratch · 1,254 emoji" },
-  { id: "AS-I-300", family: "image", ready: true,  size: "17 MB",  blurb: "Same model, 300 glyphs · sharper" },
+  { id: "AS-I",     family: "image", ready: true,  size: "17 MB",  blurb: "Text-to-image, from scratch · 1,254 emoji",
+    hint: "It only draws emoji, and only in the grammar it was trained on: a name, optionally with a size, a position and a background colour.", examples: ["red heart", "pizza", "a small rocket in the top left on a navy background", "a large grinning face in the center on a cream background"] },
+  { id: "AS-I-300", family: "image", ready: true,  size: "17 MB",  blurb: "Same model, 300 glyphs · sharper",
+    hint: "It only draws emoji, and only in the grammar it was trained on: a name, optionally with a size, a position and a background colour. It knows 300 of the most distinct glyphs, so it draws them more sharply.",
+    examples: ["cat face", "strawberry", "a large pizza in the center on a white background"] },
   { id: "AS-IF",    family: "image", ready: false, size: "1.2 GB", blurb: "Quantized SD-Turbo · draws anything" },
 ];
 

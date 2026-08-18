@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MODELS, byId, type ModelId } from "../models";
+import { MODELS, byId, type ModelId, type ModelInfo } from "../models";
 import { loadConvos, saveConvos, titleFor, newId, type Convo } from "../history";
 
-type Turn = { who: "user" | "bot" | "note"; text: string; image?: string };
+type Turn = { who: "user" | "bot" | "note"; text: string; image?: string; examples?: string[] };
 type Phase = "cold" | "loading" | "ready" | "generating";
 
 const CUES = [
@@ -74,9 +74,15 @@ export default function Page() {
   const commitModel = useCallback((next: ModelId) => {
     setModel((prev) => {
       if (prev === next) return prev;
-      setTurns((t) =>
-        t.length ? [...t, { who: "note" as const, text: `Switched to ${next}` }] : t,
-      );
+      const info = byId(next);
+      setTurns((t) => [
+        ...t,
+        {
+          who: "note" as const,
+          text: info.hint ? `Switched to ${next}. ${info.hint}` : `Switched to ${next}`,
+          examples: info.examples,
+        },
+      ]);
       return next;
     });
     setPreparing(null);
@@ -229,6 +235,18 @@ export default function Page() {
     commit.current = commitModel;
   }, [commitModel]);
 
+  /* Escape closes the model menu. The click-outside case is handled by the
+     veil beneath it, which is only inert while a download is in flight —
+     closing the menu mid-fetch would hide the only progress indicator. */
+  useEffect(() => {
+    if (!picker) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !preparing) setPicker(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picker, preparing]);
+
   const ask = useCallback(
     (raw: string) => {
       const text = raw.trim();
@@ -254,6 +272,61 @@ export default function Page() {
     },
     [phase, generate, model],
   );
+
+  /* One row renderer for both families. They were written twice, and the
+     second copy silently missed the download icon and the progress bar when
+     those were added — which is exactly what duplicated markup does. */
+  const row = (m: ModelInfo) => {
+    const busyRow = preparing?.id === m.id;
+    const here = resident.has(m.id);
+    return (
+      <button
+        type="button"
+        key={m.id}
+        role="option"
+        aria-selected={m.id === model}
+        disabled={!m.ready || (preparing !== null && !busyRow)}
+        className={
+          `pick-row${m.id === model ? " on" : ""}${busyRow ? " busy" : ""}` +
+          `${here ? " have" : " want"}${m.ready ? "" : " soon"}`
+        }
+        onClick={() => pickModel(m.id)}
+      >
+        <span className="pick-id">{m.id}</span>
+        <span className="pick-blurb">{busyRow ? "downloading…" : m.blurb}</span>
+        <span className="pick-size">
+          {busyRow ? (
+            preparing.total ? `${Math.round((preparing.loaded / preparing.total) * 100)}%` : "…"
+          ) : !m.ready ? (
+            "soon"
+          ) : here ? (
+            <span className="tickmark" aria-label="downloaded">
+              <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+                <path d="M1.5 5.8l2.6 2.6L9.5 3" stroke="currentColor" strokeWidth="1.6"
+                      fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          ) : (
+            <span className="dl">
+              <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+                <path d="M5.5 1v6.4M3 5.2l2.5 2.5L8 5.2M1.6 9.6h7.8" stroke="currentColor"
+                      strokeWidth="1.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {m.size}
+            </span>
+          )}
+        </span>
+        {busyRow && (
+          <span className="pick-bar" aria-hidden>
+            <i
+              className={preparing.total ? "" : "idle"}
+              style={preparing.total ? { width: `${(preparing.loaded / preparing.total) * 100}%` } : undefined}
+            />
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const pct = got.total ? Math.min(100, (got.loaded / got.total) * 100) : 0;
   const pending = phase === "loading" && waiting.current !== null;
@@ -420,8 +493,17 @@ export default function Page() {
 
           {turns.map((t, i) =>
             t.who === "note" ? (
-              <div key={i} className="turn note">
+              <div key={i} className={`turn note${t.examples ? " note-rich" : ""}`}>
                 <span>{t.text}</span>
+                {t.examples && (
+                  <span className="note-eg">
+                    {t.examples.map((e) => (
+                      <button key={e} type="button" onClick={() => ask(e)} disabled={busy}>
+                        {e}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </div>
             ) : t.who === "user" ? (
               <div key={i} className="turn user">
@@ -540,76 +622,9 @@ export default function Page() {
                     />
                     <div className="pick-menu" role="listbox">
                       <div className="pick-group">Text · answers questions</div>
-                      {MODELS.filter((m) => m.family === "text").map((m) => (
-                        <button
-                          type="button"
-                          key={m.id}
-                          role="option"
-                          aria-selected={m.id === model}
-                          disabled={preparing !== null && preparing.id !== m.id}
-                          className={`pick-row${m.id === model ? " on" : ""}${
-                            preparing?.id === m.id ? " busy" : ""
-                          }${resident.has(m.id) ? " have" : " want"}`}
-                          onClick={() => pickModel(m.id)}
-                        >
-                          <span className="pick-id">{m.id}</span>
-                          <span className="pick-blurb">
-                            {preparing?.id === m.id ? "downloading…" : m.blurb}
-                          </span>
-                          <span className="pick-size">
-                            {preparing?.id === m.id ? (
-                              preparing.total
-                                ? `${Math.round((preparing.loaded / preparing.total) * 100)}%`
-                                : "…"
-                            ) : resident.has(m.id) ? (
-                              <span className="tickmark" aria-label="downloaded">
-                                <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
-                                  <path d="M1.5 5.8l2.6 2.6L9.5 3" stroke="currentColor"
-                                        strokeWidth="1.6" fill="none" strokeLinecap="round"
-                                        strokeLinejoin="round" />
-                                </svg>
-                              </span>
-                            ) : (
-                              <span className="dl">
-                                <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
-                                  <path d="M5.5 1v6.4M3 5.2l2.5 2.5L8 5.2M1.6 9.6h7.8"
-                                        stroke="currentColor" strokeWidth="1.3" fill="none"
-                                        strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                                {m.size}
-                              </span>
-                            )}
-                          </span>
-                          {preparing?.id === m.id && (
-                            <span className="pick-bar" aria-hidden>
-                              <i
-                                className={preparing.total ? "" : "idle"}
-                                style={
-                                  preparing.total
-                                    ? { width: `${(preparing.loaded / preparing.total) * 100}%` }
-                                    : undefined
-                                }
-                              />
-                            </span>
-                          )}
-                        </button>
-                      ))}
+                      {MODELS.filter((m) => m.family === "text").map(row)}
                       <div className="pick-group">Image · draws instead of writing</div>
-                      {MODELS.filter((m) => m.family === "image").map((m) => (
-                        <button
-                          type="button"
-                          key={m.id}
-                          role="option"
-                          aria-selected={m.id === model}
-                          className={`pick-row${m.id === model ? " on" : ""}${m.ready ? "" : " soon"}`}
-                          disabled={!m.ready || preparing !== null}
-                          onClick={() => pickModel(m.id)}
-                        >
-                          <span className="pick-id">{m.id}</span>
-                          <span className="pick-blurb">{m.blurb}</span>
-                          <span className="pick-size">{m.ready ? m.size : "soon"}</span>
-                        </button>
-                      ))}
+                      {MODELS.filter((m) => m.family === "image").map(row)}
                     </div>
                   </>
                 )}

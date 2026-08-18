@@ -17,6 +17,8 @@ export type Turn = {
   /** data: URL for image-model replies. Stored with the conversation so a
       saved chat still shows what was drawn. */
   image?: string;
+  /** Example prompts offered alongside a model-switch note. */
+  examples?: string[];
 };
 export type Convo = { id: string; title: string; at: number; model: string; turns: Turn[] };
 

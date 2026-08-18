@@ -783,3 +783,26 @@ body {
   .shot-fill { transition: none; }
   .drawn { animation: none; }
 }
+
+/* ------------------------------------------- switch note with examples */
+
+.turn.note-rich {
+  flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 12px 14px; margin: 16px 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  color: var(--ink-2); font-size: 13px; line-height: 1.55;
+}
+/* the plain marker draws its own hairlines; the rich one is a card, so it
+   must not inherit them */
+.turn.note-rich::before, .turn.note-rich::after { content: none; }
+.turn.note-rich > span:first-child { font-family: var(--sans); white-space: normal; }
+
+.note-eg { display: flex; flex-wrap: wrap; gap: 6px; }
+.note-eg button {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2);
+  border-radius: 7px; padding: 5px 10px; font: inherit; font-size: 12px;
+  font-family: var(--mono); cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.note-eg button:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+.note-eg button:disabled { opacity: 0.5; cursor: not-allowed; }
