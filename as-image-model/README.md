@@ -212,6 +212,43 @@ Generated and never committed: `data/emoji/`, `data/emoji_src/`,
 
 ---
 
+## AS-IF — the other trade
+
+AS-I is the from-scratch model. AS-IF is its opposite number: **SD-Turbo**,
+trained by Stability AI, compressed here so it can ship. The repo keeps both
+for the same reason the text side keeps `AS-F` next to `AS-0…AS-5` — one is
+yours and limited, one is borrowed and general, and the README should say which
+is which.
+
+SD-Turbo rather than SD 1.5 because it is adversarially distilled for **1–4
+step** sampling. Vanilla SD 1.5 needs 20–50 steps, which is unusable in a
+browser at any file size. Step count, not parameter count, is what makes
+in-browser generation plausible at all.
+
+```bash
+python asif_export.py                                  # download, export, quantize
+python asif_sample.py --prompt "a red heart" --steps 2
+```
+
+Quantization is per component, because they do not tolerate damage equally:
+
+| Component | Precision | fp32 | after | Why |
+|---|---|--:|--:|---|
+| UNet | int8 | 3.2 GB | 869 MB | the bulk, and the most robust |
+| Text encoder | int8 | 1.3 GB | 342 MB | robust |
+| VAE decoder | **fp16** | 189 MB | 198 MB | int8 here causes visible colour banding on flat regions, for ~80 MB. Not worth it |
+| VAE encoder | — | 130 MB | — | unused for text-to-image; not shipped |
+
+**Measured: 4.8 GB → 1.4 GB shipped, 3.3× smaller.** 512×512 at 2 steps takes
+**22 s/image on CPU** via int8 ONNX.
+
+That number is the honest headline of this track, and it cuts against the
+project's own thesis: even after compressing a general model 3.3×, AS-IF is
+**58× larger than AS-I**. General and small are different axes, and no amount
+of quantization moves a billion-parameter model into a 24 MB budget.
+
+---
+
 ## Where this comes from
 
 ### Autoregressive Image Generation using Residual Quantization

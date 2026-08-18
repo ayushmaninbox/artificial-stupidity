@@ -173,9 +173,14 @@ This repo does **both** of the achievable ones, and labels which is which.
 |:--|:--|:--|
 | Weights | trained here, from scratch | Stability AI's SD-Turbo |
 | Work done here | the entire model | compression, export, browser runtime |
-| Size | ~24 MB int8 | ~350 MB int8 |
+| Size | **~24 MB** int8 | **~1.4 GB** int8 (measured, from 4.8 GB fp32) |
 | Draws | ~1250 emoji, placed and coloured | anything |
+| Resolution | 64×64 | 512×512 |
 | Steps | 8 | 1–4 |
+
+**AS-IF is 58× larger than AS-I.** That gap is the price of "anything", and it is
+worth seeing plainly: compressing a general model 3.3× still leaves something
+that will never fit where AS-I fits. Small and general are not the same axis.
 
 That is the same split as the text side — `AS-F` borrows GPT-2's fluency, while
 `AS-0…AS-5` are wholly homegrown and honestly limited.

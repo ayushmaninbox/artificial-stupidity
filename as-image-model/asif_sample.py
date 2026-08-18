@@ -47,7 +47,7 @@ def main():
         raise SystemExit(f"no build at {build} — run: python asif_export.py")
 
     from optimum.onnxruntime import ORTStableDiffusionPipeline
-    import numpy as np
+    import torch
 
     print(f"\n  loading {args.build} ...", flush=True)
     t0 = time.time()
@@ -60,7 +60,7 @@ def main():
 
     imgs, t0 = [], time.time()
     for p in prompts:
-        gen = np.random.RandomState(args.seed) if args.seed is not None else None
+        gen = torch.Generator().manual_seed(args.seed) if args.seed is not None else None
         out = pipe(
             prompt=p,
             num_inference_steps=args.steps,
