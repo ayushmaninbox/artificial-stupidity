@@ -83,9 +83,19 @@ async function hasWebGPU() {
  */
 async function SESSION_OPTS(heavy = false) {
   if (!heavy) return { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
-  const gpu = await hasWebGPU();
+
+  /* WASM, not WebGPU — and this is the opposite of what it looks like it
+     should be.
+     
+     These graphs are int8, produced by quantize_dynamic, which emits
+     DynamicQuantizeLinear and MatMulInteger (108 of the former in this UNet).
+     Those are CPU-oriented integer ops that the WebGPU backend does not
+     implement, so enabling WebGPU does not accelerate an int8 model — it
+     splits the graph across two backends and copies tensors between them at
+     every boundary. WebGPU wants fp16; int8 wants WASM. Asking for both is
+     how you get neither. */
   return {
-    executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"],
+    executionProviders: ["wasm"],
     /* "disabled", deliberately. Every other level rewrites the graph into a
        second set of buffers before the first is released, so a 325 MB model
        briefly needs ~650 MB. Optimisation buys some speed; it costs the load
@@ -104,19 +114,35 @@ async function SESSION_OPTS(heavy = false) {
  * no reason. It is actually the byte count that could not be allocated, and
  * saying so is the difference between a bug report and a shrug.
  */
+/**
+ * Surface what actually failed.
+ *
+ * A previous version of this read a bare numeric message as a byte count and
+ * reported "out of memory". That was a guess, and a bad one: the numbers rose
+ * after changes that lowered peak memory, which no allocation size would do.
+ * ONNX Runtime throws WASM exceptions whose `message` is a POINTER, not a
+ * size, so the number says nothing about memory at all.
+ *
+ * Now: dump everything the exception carries and let the evidence speak.
+ */
 function describe(err) {
   const raw = err instanceof Error ? err.message : String(err);
-  // our own pre-flight message is already the explanation
   if (raw.startsWith("AS-IF needs about")) return raw;
-  const n = Number(raw);
-  if (Number.isFinite(n) && n > 1e8) {
-    const gb = (n / 1e9).toFixed(2);
-    return `Ran out of memory loading the model — it asked for ${gb} GB, ` +
-           `more than this browser allows a single tab. Try a smaller model, ` +
-           `or a browser with WebGPU enabled.`;
-  }
-  if (/out of memory|Aborted|allocation/i.test(raw)) {
-    return `Ran out of memory loading the model. Try a smaller one.`;
+
+  const detail = {
+    message: raw,
+    name: err?.name ?? null,
+    numeric: Number.isFinite(Number(raw)),
+    stack: (err?.stack ?? "").split("\n").slice(0, 6).join(" | "),
+    keys: err && typeof err === "object" ? Object.keys(err) : [],
+  };
+  console.error("[AS] model load failed", detail, err);
+  self.postMessage({ type: "diag", detail });
+
+  if (detail.numeric) {
+    return `The model failed to load and ONNX Runtime returned only an ` +
+           `internal code (${raw}). The console has the full error — that is ` +
+           `the useful part. AS-I works and is 17 MB.`;
   }
   return raw;
 }

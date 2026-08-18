@@ -180,6 +180,8 @@ export default function Page() {
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
+      } else if (m.type === "diag") {
+        console.error("[AS] failure detail", m.detail);
       } else if (m.type === "caps") {
         // one line, in the console, so a capability question is answerable
         // without another round of guessing
