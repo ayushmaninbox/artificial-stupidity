@@ -40,8 +40,7 @@ function describe(err) {
   const raw = err instanceof Error ? err.message : String(err);
   const detail = { message: raw, name: err?.name ?? null,
                    numeric: Number.isFinite(Number(raw)),
-                   stack: (err?.stack ?? "").split("
-").slice(0, 6).join(" | ") };
+                   stack: (err?.stack ?? "").split("\n").slice(0, 6).join(" | ") };
   console.error("[AS-img] load failed", detail, err);
   self.postMessage({ type: "diag", detail });
   return detail.numeric
@@ -75,77 +74,6 @@ function randn(n, rand) {
    - Writing to IndexedDB on every chunk is slower than the network. Progress
      is checkpointed roughly every 4 MB instead, so a crash costs seconds of
      re-download rather than the whole file.                                  */
-
-const DB_NAME = "as-partials";
-const STORE = "chunks";
-const CHECKPOINT = 4 * 1024 * 1024;
-
-function idb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbOp(mode, fn) {
-  try {
-    const db = await idb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const req = fn(tx.objectStore(STORE));
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  } catch {
-    return null;   // private browsing or no quota — resume is an optimisation
-  }
-}
-
-const partialGet = (k) => idbOp("readonly", (st) => st.get(k));
-const partialPut = (k, v) => idbOp("readwrite", (st) => st.put(v, k));
-const partialDel = (k) => idbOp("readwrite", (st) => st.delete(k));
-
-/**
- * Download once, keep it in Cache Storage, and return the BYTES.
- *
- * An earlier version returned the URL instead, so ORT would fetch it itself
- * and stream into WASM without a second copy. That was an optimisation for an
- * out-of-memory problem that turned out not to exist, and it broke every image
- * model: session creation aborted with a bare WASM pointer and no message.
- *
- * The tell was that AS-0..AS-5 kept working throughout — they were the only
- * models still being handed a Uint8Array. Same runtime, same quantisation,
- * same worker; the only difference was bytes versus URL.
- */
-
-async function ensureCached(url, id, onBytes) {
-  try {
-    const cache = await caches.open("transformers-cache");
-    const hit = await cache.match(url);
-    if (hit) {
-      const buf = new Uint8Array(await hit.arrayBuffer());
-      onBytes(buf.length, buf.length);
-      return buf;
-    }
-    const bytes = await fetchBytes(url, id, onBytes);
-    await cache.put(
-      url,
-      new Response(bytes, {
-        headers: { "content-type": "application/octet-stream",
-                   "content-length": String(bytes.length) },
-      }),
-    );
-    return bytes;
-  } catch {
-    // no Cache API (private browsing, quota) — the download still works
-    return fetchBytes(url, id, onBytes);
-  }
-}
-
 
 const DB_NAME = "as-partials";
 const STORE = "chunks";
@@ -264,7 +192,7 @@ async function fetchBytes(url, id, onBytes) {
 async function loadImage(id) {
   if (imgCache.has(id)) return imgCache.get(id);
   
-  const ort =   const base = `${IMG_BASE}/${id}`;
+  const base = `${IMG_BASE}/${id}`;
 
   const cfg = await (await fetch(`${base}/model.json`, { cache: "no-store" })).json();
   // one bar across all three graphs, so it does not reset twice mid-download
@@ -292,7 +220,7 @@ async function loadImage(id) {
 
 /** Draw one image. Mirrors the reference loop in diffusion.py exactly. */
 async function runImage(id, prompt, onStep) {
-  const ort =   const { cfg, stoi, text, unet, dec } = await loadImage(id);
+  const { cfg, stoi, text, unet, dec } = await loadImage(id);
   const T = cfg.maxTokens, L = cfg.latent, C = cfg.latentCh, G = cfg.guidance;
 
   const encode = (str) => {
@@ -379,21 +307,9 @@ async function runImage(id, prompt, onStep) {
    The tokenizer is CLIP's BPE, which is far too much to hand-roll, so
    transformers.js supplies it while the graphs run on bare onnxruntime.      */
 
-const SD_REPO = "ayushmaninbox/artificial-stupidity-asif";
-const SD_BASE = `https://huggingface.co/${SD_REPO}/resolve/main`;
-
-/* Roughly what the tiny-sd build needs resident: 325 MB of weights, plus the
-   graph and activations for a 64x64x4 latent at batch 2. Measured peaks landed
-   near 700 MB, so anything under that will fail — and failing AFTER a 454 MB
-   download is a worse experience than not starting. */
-const SD_NEEDS_MB = 700;
-
-
 
 async function loadSD() {
   if (sdCache) return sdCache;
-  
-  const ort = 
 
   // no-store: this config decides WHICH build loads, so a stale copy sends the
   // browser after a model that cannot run
@@ -441,16 +357,15 @@ async function loadSD() {
   const dec = await ort.InferenceSession.create(dB, light);
 
   sdCache = { cfg, tok, text, unet, dec };
-  // handlers[0] is what ORT settled on after dropping anything unavailable —
-  // requesting webgpu and getting wasm was invisible until this was reported
-  const chosen = unet.handler?._ep ?? unet.handler?.executionProviders?.[0]
-    ?? ((await hasWebGPU()) ? "webgpu" : "wasm");
+  // What ORT actually settled on, not what was asked for. This worker requests
+  // wasm alone, so anything else here means the runtime substituted something.
+  const chosen = unet.handler?._ep ?? unet.handler?.executionProviders?.[0] ?? "wasm";
   self.postMessage({ type: "backend", model: "AS-IF", backend: String(chosen) });
   return sdCache;
 }
 
 async function runSD(prompt, onStep) {
-  const ort =   const { cfg, tok, text, unet, dec } = await loadSD();
+  const { cfg, tok, text, unet, dec } = await loadSD();
   const embed = async (str) => {
     const enc = await tok(str, {
       padding: "max_length", max_length: cfg.maxTokens, truncation: true,

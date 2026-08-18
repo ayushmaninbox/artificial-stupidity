@@ -277,6 +277,10 @@ export default function Page() {
       }
     };
 
+    /* One handler, two workers: the image worker is created lazily by
+       workerFor(), long after this effect ran, and reads it through the ref. */
+    handle.current = onMsg;
+    w.onmessage = (e) => handle.current(e);
     return () => w.terminate();
   }, []);
 
