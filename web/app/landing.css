@@ -470,3 +470,26 @@
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+
+/* ------------------------------------------------------- star button */
+
+.lp-star {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--d-line-2); background: var(--d-surface);
+  color: var(--d-ink-2); padding: 7px 12px; border-radius: 7px;
+  font-size: 13.5px; text-decoration: none; white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.lp-star:hover { border-color: var(--d-ink-3); color: var(--d-ink); }
+.lp-star b {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  color: var(--d-ink); padding-left: 8px; margin-left: 2px;
+  border-left: 1px solid var(--d-line-2);
+}
+
+/* the nav was cramped: give the links room and let the row wrap rather than
+   overflow, and drop the section links before the star button disappears */
+.lp-nav-in { gap: 20px; }
+.lp-nav-links { gap: 20px; }
+@media (max-width: 940px) { .lp-nav-links a:not(.lp-cta):not(.lp-star) { display: none; } }
+@media (max-width: 560px) { .lp-star span { display: none; } .lp-star b { border: 0; padding-left: 0; } }

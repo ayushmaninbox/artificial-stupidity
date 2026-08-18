@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import "./landing.css";
+import Stars from "./stars";
 import {
   LossCurves, PrecisionCost, SizeScale, LatentGrid,
   CorpusMix, Tokenisation, Compression, BrowserFlow, Scoring,
@@ -164,7 +165,7 @@ export default function Landing() {
             <a href="#models">Models</a>
             <a href="#images">Images</a>
             <a href="#download">Download</a>
-            <a href={GH} target="_blank" rel="noreferrer">GitHub</a>
+            <Stars />
             <Link className="lp-cta accent" href="/chat">Try it →</Link>
           </div>
         </div>
@@ -756,6 +757,8 @@ export default function Landing() {
             <Link href="/chat">Chat</Link>
             <a href={GH} target="_blank" rel="noreferrer">GitHub</a>
             <a href={HF} target="_blank" rel="noreferrer">Hugging Face</a>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
             <a href={`${GH}/blob/main/LICENSE`} target="_blank" rel="noreferrer">MIT</a>
           </div>
         </div>

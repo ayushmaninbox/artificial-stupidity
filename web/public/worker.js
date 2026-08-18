@@ -39,9 +39,31 @@ import {
   TextStreamer,
   env,
 } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js";
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.webgpu.min.mjs";
-
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+/* Reuse the ONNX Runtime that transformers.js already bundles.
+ *
+ * Importing onnxruntime-web separately looks harmless and is not: two ORT
+ * instances in one worker each try to initialise the WASM backend, and
+ * whichever touches it second fails — which surfaces as image models that
+ * download fully and then never produce a session, with no useful error.
+ *
+ * Resolved lazily because `env.backends.onnx` is not necessarily populated at
+ * module-evaluation time, and falls back to a standalone build if this version
+ * of transformers.js stops exposing it. */
+let _ort = null;
+async function getOrt() {
+  if (_ort) return _ort;
+  const bundled = env?.backends?.onnx;
+  if (bundled?.InferenceSession && bundled?.Tensor) {
+    _ort = bundled;
+  } else {
+    _ort = await import(
+      "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.mjs"
+    );
+    _ort.env.wasm.wasmPaths =
+      "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+  }
+  return _ort;
+}
 
 env.allowLocalModels = false;
 
@@ -91,6 +113,7 @@ const MODELS = {
   "AS-F":  { kind: "gpt2", label: "AS-F",  bytes: 164_000_000 },
   "AS-I":     { kind: "image", label: "AS-I",     bytes: 17_000_000 },
   "AS-I-300": { kind: "image", label: "AS-I-300", bytes: 17_000_000 },
+  "AS-IF":    { kind: "sd",    label: "AS-IF",    bytes: 1_216_000_000 },
   "AS-0":  { kind: "char", label: "AS-0",  bytes: 3_520_000 },
   "AS-1":  { kind: "char", label: "AS-1",  bytes: 3_840_000 },
   "AS-2":  { kind: "char", label: "AS-2",  bytes: 3_840_000 },
@@ -103,6 +126,7 @@ let current = "AS-F";
 const charCache = new Map();   // id -> { session, chars, stoi, block }
 let charTok = null;
 const imgCache = new Map();    // id -> { text, unet, dec, cfg, stoi }
+let sdCache = null;            // AS-IF is one build, so one slot
 
 let generator = null;
 
@@ -143,6 +167,7 @@ async function loadCharTokenizer() {
 /** Fetch one tiny graph, reporting bytes so the UI can show a real bar. */
 async function loadChar(id) {
   if (charCache.has(id)) return charCache.get(id);
+  const ort = await getOrt();
   const tok = await loadCharTokenizer();
 
   const url = `${TINY_BASE}/${id}.onnx`;
@@ -176,6 +201,7 @@ async function loadChar(id) {
 
 /** One reply from a character model, streamed a character at a time. */
 async function runChar(id, text, temperature, onPiece) {
+  const ort = await getOrt();
   const { session, chars, stoi, block } = await loadChar(id);
 
   const prompt = `A: ${text.trim()}\nB:`;
@@ -264,6 +290,7 @@ async function fetchBytes(url, id, onBytes) {
 
 async function loadImage(id) {
   if (imgCache.has(id)) return imgCache.get(id);
+  const ort = await getOrt();
   const base = `${IMG_BASE}/${id}`;
 
   const cfg = await (await fetch(`${base}/model.json`)).json();
@@ -294,6 +321,7 @@ async function loadImage(id) {
 
 /** Draw one image. Mirrors the reference loop in diffusion.py exactly. */
 async function runImage(id, prompt, onStep) {
+  const ort = await getOrt();
   const { cfg, stoi, text, unet, dec } = await loadImage(id);
   const T = cfg.maxTokens, L = cfg.latent, C = cfg.latentCh, G = cfg.guidance;
 
@@ -371,6 +399,106 @@ async function runImage(id, prompt, onStep) {
   return { rgba, size: S2 };
 }
 
+/* ================================================================= AS-IF
+
+   Same idea as AS-I, different everything else. SD-Turbo is epsilon-predicting
+   with a Euler discrete schedule, a CLIP BPE tokenizer, and — crucially — no
+   classifier-free guidance at all, so it runs ONE unet pass per step instead
+   of two. The schedule comes baked from diffusers rather than reimplemented.
+
+   The tokenizer is CLIP's BPE, which is far too much to hand-roll, so
+   transformers.js supplies it while the graphs run on bare onnxruntime.      */
+
+const SD_REPO = "ayushmaninbox/artificial-stupidity-asif";
+const SD_BASE = `https://huggingface.co/${SD_REPO}/resolve/main`;
+
+async function loadSD() {
+  if (sdCache) return sdCache;
+  const ort = await getOrt();
+  const cfg = await (await fetch(`${SD_BASE}/web/model.json`)).json();
+
+  const APPROX = 1_216_000_000;
+  let seen = 0;
+  const bump = (n) => {
+    seen += n;
+    self.postMessage({ type: "progress", model: "AS-IF", file: "AS-IF", loaded: seen, total: APPROX });
+  };
+
+  const { AutoTokenizer } = await import(
+    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js"
+  );
+  const tok = await AutoTokenizer.from_pretrained(SD_REPO, { subfolder: cfg.tokenizer });
+
+  const b = `${SD_BASE}/sd-turbo`;
+  const [tb, ub, db] = [
+    await fetchBytes(`${b}/text_encoder/model.onnx`, "AS-IF", bump),
+    await fetchBytes(`${b}/unet/model.onnx`, "AS-IF", bump),
+    await fetchBytes(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump),
+  ];
+  const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+  sdCache = {
+    cfg, tok,
+    text: await ort.InferenceSession.create(tb, opt),
+    unet: await ort.InferenceSession.create(ub, opt),
+    dec: await ort.InferenceSession.create(db, opt),
+  };
+  return sdCache;
+}
+
+async function runSD(prompt, onStep) {
+  const ort = await getOrt();
+  const { cfg, tok, text, unet, dec } = await loadSD();
+  const enc = await tok(prompt, {
+    padding: "max_length", max_length: cfg.maxTokens, truncation: true,
+  });
+  const ids = BigInt64Array.from(Array.from(enc.input_ids.data, (v) => BigInt(v)));
+  const { last_hidden_state: emb } = await text.run({
+    input_ids: new ort.Tensor("int64", ids, [1, cfg.maxTokens]),
+  });
+
+  const L = cfg.latent, C = cfg.latentCh;
+  const n = C * L * L;
+  const S = cfg.sigmas;
+  let lat = randn(n, Math.random);
+  for (let k = 0; k < n; k++) lat[k] *= S[0];      // scaled by init_noise_sigma
+
+  for (let i = 0; i < cfg.steps; i++) {
+    const div = Math.sqrt(S[i] * S[i] + 1);
+    const inp = new Float32Array(n);
+    for (let k = 0; k < n; k++) inp[k] = lat[k] / div;
+
+    const out = await unet.run({
+      sample: new ort.Tensor("float32", inp, [1, C, L, L]),
+      // timestep is a SCALAR here — shape [1] fails inside time_proj
+      timestep: new ort.Tensor("float32", Float32Array.from([cfg.timesteps[i]]), []),
+      encoder_hidden_states: emb,
+    });
+    const eps = (out.out_sample ?? Object.values(out)[0]).data;
+
+    // Euler: denoised = lat − σ·ε, derivative = ε, then step by Δσ
+    const d = S[i + 1] - S[i];
+    for (let k = 0; k < n; k++) lat[k] += eps[k] * d;
+    onStep(i + 1, cfg.steps);
+  }
+
+  // TAESD takes UNet-space latents directly — its scaling_factor is 1.0, so
+  // dividing by SD's 0.18215 first returns psychedelic noise.
+  const decOut = await dec.run({
+    latent_sample: new ort.Tensor("float32", lat, [1, C, L, L]),
+  });
+  const img = decOut.sample ?? Object.values(decOut)[0];
+  const px = cfg.imageSize * cfg.imageSize;
+  const rgba = new Uint8ClampedArray(px * 4);
+  for (let k = 0; k < px; k++) {
+    for (let c = 0; c < 3; c++) {
+      const v = img.data[c * px + k];
+      rgba[k * 4 + c] = Math.round((Math.min(1, Math.max(-1, v)) + 1) * 127.5);
+    }
+    rgba[k * 4 + 3] = 255;
+  }
+  return { rgba, size: cfg.imageSize };
+}
+
 async function load() {
   if (generator) return generator;
 
@@ -436,6 +564,15 @@ async function ask(text, temperature, model) {
   /* The character models are a different architecture with a different
      tokenizer, so they get their own loop — but the page sees the identical
      progress / token / done sequence either way. */
+  if (MODELS[id].kind === "sd") {
+    const { rgba, size } = await runSD(text, (step, total) =>
+      self.postMessage({ type: "step", step, total }),
+    );
+    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
+    self.postMessage({ type: "done" });
+    return;
+  }
+
   if (MODELS[id].kind === "image") {
     const { rgba, size } = await runImage(id, text, (step, total) =>
       self.postMessage({ type: "step", step, total }),
@@ -496,7 +633,16 @@ self.addEventListener("message", async (e) => {
   try {
     if (e.data.type === "load") {
       const id = MODELS[e.data.model] ? e.data.model : "AS-F";
-      if (MODELS[id].kind === "image") {
+      if (MODELS[id].kind === "sd") {
+    const { rgba, size } = await runSD(text, (step, total) =>
+      self.postMessage({ type: "step", step, total }),
+    );
+    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
+    self.postMessage({ type: "done" });
+    return;
+  }
+
+  if (MODELS[id].kind === "image") {
     const { rgba, size } = await runImage(id, text, (step, total) =>
       self.postMessage({ type: "step", step, total }),
     );
