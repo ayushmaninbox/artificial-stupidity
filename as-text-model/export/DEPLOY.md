@@ -2,6 +2,9 @@
 
 What's live, and how to reproduce it.
 
+> Every command on this page runs from **`as-text-model/`** (the parent of this
+> directory), which is where `checkpoints/` and `onnx_build/` live.
+
 | | Where | Cost |
 |---|---|---|
 | **Website** | [artificial-stupidity.vercel.app](https://artificial-stupidity.vercel.app) | free |
@@ -42,7 +45,7 @@ Runs the model **in the browser** — no backend, nothing to pay for. Pushes to
 `main` auto-deploy to Vercel with **Root Directory** set to `web`.
 
 Setup and the two non-obvious build constraints are documented in
-[`../web/README.md`](../web/README.md). Read that before touching the bundler
+[`../../web/README.md`](../../web/README.md). Read that before touching the bundler
 config or adding COOP/COEP headers; both have already broken this once.
 
 ### Exporting the ONNX build the browser needs

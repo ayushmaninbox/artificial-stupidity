@@ -2,11 +2,15 @@
 # Nothing generated belongs in git. Every path below is reproducible from the
 # scripts that are in git, and most of it is enormous.
 #
-#   data/raw          117 MB  -> python data/collect.py
-#   data/processed     43 MB  -> python data/prepare.py
-#   checkpoints       486 MB  -> python train.py / finetune.py
+#   as-text-model/data/raw          117 MB  -> python data/collect.py
+#   as-text-model/data/processed     43 MB  -> python data/prepare.py
+#   as-text-model/checkpoints       486 MB  -> python train.py / finetune.py
 #
 # Publish the corpus and the models to Hugging Face instead — see README.
+#
+# Note: patterns containing a slash are anchored to this file's directory, so
+# the corpus rules below must name as-text-model/ explicitly. The single-name
+# rules (checkpoints/, logs/, __pycache__/) match at any depth and don't.
 # ---------------------------------------------------------------------------
 
 # python
@@ -18,12 +22,12 @@ __pycache__/
 .ipynb_checkpoints/
 
 # scraped + generated corpora
-data/raw/*
-!data/raw/tiny.txt
-data/raw_v0/
-data/processed/
-data/persona/
-data/stage2/
+as-text-model/data/raw/*
+!as-text-model/data/raw/tiny.txt
+as-text-model/data/raw_v0/
+as-text-model/data/processed/
+as-text-model/data/persona/
+as-text-model/data/stage2/
 
 # trained models and exports
 checkpoints/

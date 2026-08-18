@@ -11,7 +11,7 @@ pinned: false
 # Inference API — optional
 
 > **The live site does not use this.** It runs the model in the visitor's
-> browser instead — see [`../web/README.md`](../web/README.md). This directory
+> browser instead — see [`../../web/README.md`](../../web/README.md). This directory
 > is kept for self-hosting, and because it's the right starting point if you
 > want an HTTP API rather than in-browser inference.
 

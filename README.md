@@ -88,7 +88,7 @@ One full collection run: **116.9 MB, 4,023,624 lines, 64 minutes.**
 | Song lyrics | 15.0 MB | 386,512 | So it can be asked to write a song |
 | Synthetic arithmetic | 9.0 MB | 675,155 | So it can do maths, badly |
 
-Cleaning ([`data/sources/clean.py`](data/sources/clean.py)) is stricter than
+Cleaning ([`clean.py`](as-text-model/data/sources/clean.py)) is stricter than
 you'd expect, because a character-level model pays for every distinct character
 it sees. It strips URLs, `@mentions`, `[Music]` tags, bot messages and Twitch
 emote names (`elbyGiggles`, `xqFreaky`) while deliberately **keeping** `KEKW`
@@ -120,7 +120,7 @@ less unique content than the number suggests.
 Scraped text teaches it to *talk* but not to *answer questions* — nobody on
 Twitch explains photosynthesis to anyone. That data doesn't exist, so it was
 written by hand: **89 seed answers** expanded into **52,741 examples** in
-[`data/sources/persona.py`](data/sources/persona.py).
+[`persona.py`](as-text-model/data/sources/persona.py).
 
 Every one follows three rules:
 
@@ -196,7 +196,7 @@ The 1-bit model is measurably worse, which is the point of the experiment.
 >
 > The model has to **know it's being squashed while it learns**, so it can route
 > around the damage. That's quantization-aware training with a straight-through
-> estimator, and it's in [`model/bitlinear.py`](model/bitlinear.py).
+> estimator, and it's in [`model/bitlinear.py`](as-text-model/model/bitlinear.py).
 
 **1 bit is not a 32× saving — it's about 20×.** Embeddings, LayerNorms and one
 fp16 scale per weight row stay high-precision, because quantizing them wrecks
@@ -229,30 +229,55 @@ answered the moment the model is ready.
 
 ## What's in here
 
+Two top-level pieces: the model, and the site that serves it.
+
+```
+as-text-model/       everything that trains, compresses and serves the model
+web/                 the site (Next.js → Vercel)
+```
+
+### `as-text-model/` — [full guide](as-text-model/README.md)
+
 ```
 The talkative model (AS-F)
   finetune.py              two-stage fine-tune: voice, then personality
   data/sources/persona.py  the 89 hand-written wrong answers
   compress.py              points the AS-4 quantizers at GPT-2
   talk.py                  chat in your terminal
+  app.py                   local Gradio chat UI
 
 The tiny models (AS-0 … AS-5)
   model/bitlinear.py       quantizers + straight-through estimator
   model/model.py           a transformer, written from scratch
   model/tokenizer.py       character-level
+  config.py                the six presets
   train.py                 trains any of the six
+  generate.py              sample from one
   bench.py                 scores them against each other
 
 Collecting the data
   data/collect.py          runs the scrapers, enforces the source mix
+  data/prepare.py          corpus -> training bins
   data/sources/clean.py    decides what's worth keeping
   data/sources/            twitch, youtube, hf dumps, lyrics, synth, reddit
 
 Shipping it
-  web/                     the site (Next.js → Vercel)          [web/README.md]
+  export/                  publish to HF, ONNX, GGUF, Ollama    [export/DEPLOY.md]
   space/                   optional self-hosted API             [space/README.md]
-  export/                  publish to HF, GGUF, Ollama          [export/DEPLOY.md]
 ```
+
+### `web/` — [full guide](web/README.md)
+
+```
+app/page.tsx             the whole UI — state machine, streaming, thread
+app/globals.css          design system, light + dark
+public/worker.js         the model. runs generation, streams tokens back
+```
+
+Never committed, because it's generated and enormous: `data/raw/` (117 MB),
+`data/processed/` (43 MB), `checkpoints/` (486 MB), `onnx_build/`. All of it
+rebuilds from the scripts above — the corpus and weights are published to
+Hugging Face instead.
 
 ---
 
@@ -262,14 +287,28 @@ Shipping it
 git clone https://github.com/ayushmaninbox/artificial-stupidity
 cd artificial-stupidity
 python3.12 -m venv .venv && source .venv/bin/activate
+
+cd as-text-model
 pip install -r requirements.txt
 ```
 
-**Talk to the finished model:**
+Every Python command below runs from **`as-text-model/`**.
+
+**Talk to the finished model** — downloads from Hugging Face, no training
+required:
 
 ```bash
 python talk.py --model ayushmaninbox/artificial-stupidity --chat
 ```
+
+```
+you  > why do we dream
+AS   > Your brain is defragmenting. It's the same process a hard drive
+       runs, which is why you wake up tired.
+```
+
+Add `--prompt "bro is"` for a one-shot instead of a chat, `--temperature` to
+set how unhinged it gets, or `python app.py` for a local browser UI.
 
 **Build the whole thing from nothing:**
 
@@ -282,6 +321,9 @@ python finetune.py --base checkpoints/AS-F \
 python talk.py --model checkpoints/AS-F2 --chat
 ```
 
+Both stages stop early on purpose — see [Stage 2](#stage-2--teaching-it-to-speak)
+and [Stage 3](#stage-3--teaching-it-to-be-confidently-wrong) above for why.
+
 **Train the tiny from-scratch ones:**
 
 ```bash
@@ -292,7 +334,8 @@ python bench.py --markdown  # compare
 ```
 
 Everything runs on a laptop — no cloud GPU, no paid API. Built and trained
-entirely on an M4 MacBook Air.
+entirely on an M4 MacBook Air. Full flag reference and the compression
+workflow: [`as-text-model/README.md`](as-text-model/README.md).
 
 **Run the website locally:**
 
@@ -309,7 +352,7 @@ cd web && npm install && npm run dev
   just said.
 - **It goes vague outside its topics.** Far from its training you get the right
   *tone* with an increasingly meaningless answer. Add seeds to
-  `data/sources/persona.py` to fix a dead spot.
+  `as-text-model/data/sources/persona.py` to fix a dead spot.
 - **The tiny models can't spell.** They generate one character at a time, so
   they must guess "mitochondria" twelve letters in a row, and they lose that
   bet. A property of the approach, not a bug.
@@ -347,19 +390,20 @@ because someone else paid for the fluency.
 
 The **code** is MIT — see [LICENSE](LICENSE).
 
-The **corpus** is not mine to license. `data/raw/` is Twitch chat, Reddit
-comments, YouTube transcripts and song lyrics written by other people, collected
-for a personal experiment and republished for reproducibility. The **model**
-derives from GPT-2 (OpenAI, MIT). If you want to use either commercially, look
-into the source material's licensing first.
+The **corpus** is not mine to license. `as-text-model/data/raw/` is Twitch
+chat, Reddit comments, YouTube transcripts and song lyrics written by other
+people, collected for a personal experiment and republished for
+reproducibility. The **model** derives from GPT-2 (OpenAI, MIT). If you want to
+use either commercially, look into the source material's licensing first.
 
 ## Contributing
 
 Issues and pull requests welcome. The most useful contribution is **new persona
 seeds** — if you find a question it answers vaguely, add a confidently wrong
 answer to `FACTS`, `ADVICE` or `IDENTITY` in
-[`data/sources/persona.py`](data/sources/persona.py). Three rules: perfect
-grammar, wrong in a way a real person could believe, and no hedging.
+[`as-text-model/data/sources/persona.py`](as-text-model/data/sources/persona.py).
+Three rules: perfect grammar, wrong in a way a real person could believe, and
+no hedging.
 
 ---
 

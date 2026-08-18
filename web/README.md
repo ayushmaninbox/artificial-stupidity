@@ -25,7 +25,7 @@ subscription** ($9/mo), and HF's serverless Inference API returns
 
 In-browser turned out better regardless — nothing sleeps, nothing queues,
 concurrent users are unlimited, and it costs nothing at any traffic level. The
-FastAPI server still exists in [`../space/`](../space) if you want to self-host.
+FastAPI server still exists in [`../as-text-model/space/`](../as-text-model/space) if you want to self-host.
 
 Vercel cannot host the model itself: Hobby serverless functions cap at 250 MB
 unzipped and PyTorch alone is ~800 MB.
@@ -107,6 +107,7 @@ Change `MODEL_ID` at the top of [`public/worker.js`](public/worker.js). The
 repo must contain an ONNX export under `onnx/`:
 
 ```bash
+cd ../as-text-model
 optimum-cli export onnx --model checkpoints/AS-F2 \
     --task text-generation-with-past onnx_build/
 python -c "
