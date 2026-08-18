@@ -166,16 +166,15 @@ async function capabilities() {
     heapMB = Math.round((pages * 65536) / 1e6);
   } catch { /* probing is best effort */ }
 
-  let ortWebgpu = false;
+  let ortBuild = null;
   try {
     const g = await getOrtGpu();
-    // 1x1 identity graph is enough to prove the provider initialises
-    ortWebgpu = !!g && typeof g.InferenceSession?.create === "function";
-  } catch { ortWebgpu = false; }
+    ortBuild = g?.env?.wasm?.wasmPaths ? "ort.min (plain wasm)" : "unknown";
+  } catch (e) { ortBuild = `failed: ${e?.message ?? e}`; }
 
   return {
     webgpu: gpu,
-    ortWebgpuBuild: ortWebgpu,
+    ortBuild,
     crossOriginIsolated: self.crossOriginIsolated === true,
     sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
     wasmThreads: ort?.env?.wasm?.numThreads ?? null,
@@ -202,17 +201,34 @@ async function capabilities() {
  * runtime and the image models on this one, each with its own wasmPaths, keeps
  * them out of each other's way.
  */
-const ORT_GPU_VER = "1.20.1";
+const ORT_VER = "1.20.1";
 let _ortGpu = null;
+
+/**
+ * The PLAIN build, not the WebGPU one — and the reasoning matters because the
+ * obvious choice is wrong.
+ *
+ * `ort.webgpu.min.mjs` ships the JSEP wasm binary, which is built to delegate
+ * work to the GPU. These graphs are int8 (`DynamicQuantizeLinear`,
+ * `MatMulInteger`) and those are CPU integer kernels the WebGPU path does not
+ * implement — so we pin execution to wasm anyway, and end up running CPU
+ * kernels inside a binary built for something else. Session creation then
+ * aborts with a bare WASM pointer and no message, which is what
+ * "358188424" was.
+ *
+ * `ort.min.mjs` is the plain WASM build with the full CPU kernel set, which is
+ * what an int8 model actually wants.
+ */
 async function getOrtGpu() {
   if (_ortGpu) return _ortGpu;
   const m = await import(
-    `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_GPU_VER}/dist/ort.webgpu.min.mjs`
+    `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort.min.mjs`
   );
-  m.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_GPU_VER}/dist/`;
-  // no cross-origin isolation on this site (see next.config.js), so there is
-  // no SharedArrayBuffer and threads would fail to start
+  m.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/`;
+  // no cross-origin isolation here (see next.config.js), so no SharedArrayBuffer
+  // and threads cannot start
   m.env.wasm.numThreads = 1;
+  m.env.wasm.simd = true;
   _ortGpu = m;
   return _ortGpu;
 }
