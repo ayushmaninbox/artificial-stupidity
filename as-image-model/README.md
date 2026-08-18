@@ -218,6 +218,72 @@ byte for byte.
 
 ---
 
+## Where this comes from
+
+AS-I is not a reimplementation of any one of these. It borrows an idea from
+each and deviates where the objective differs — the goal here is *smallest and
+fastest*, which is not the goal any of them were optimising for.
+
+### Autoregressive Image Generation using Residual Quantization
+Lee, Kim, Kim, Cho, Han — CVPR 2022 · [arXiv:2203.01941](https://arxiv.org/abs/2203.01941)
+
+The origin of the RQ-VAE idea. Its contribution is that **residual** quantization
+lets a very short code sequence stay high-fidelity: 256×256 images compressed to
+just 8×8 positions, because each position stacks 4 codes instead of 1.
+
+- **Taken:** the target itself — 8×8 really is enough spatial resolution if each
+  position carries enough information.
+- **Dropped:** the codebook, and the RQ-Transformer.
+
+The paper's stage 2 is autoregressive: 8×8×4 = 256 codes emitted *sequentially*.
+That is genuinely fast next to AR models needing 1024+ tokens, but it is 64–256
+forward passes against diffusion's 8, and sequential decoding is the one cost
+this project cannot pay. The codebook is 16,384 × 256 × 4 ≈ 16.8M parameters
+(~67 MB) — larger than all of AS-I. A continuous 4-channel latent reaches the
+same 8×8 compactness with no table at all.
+
+### RQ-VAE-Unet-Image-Generation-Model
+[Amineharrabi](https://github.com/Amineharrabi/RQ-VAE-Unet-Image-Generation-Model)
+
+An implementation of the paper's **stage 1 only**, plus a residual refiner.
+Worth being clear about what that means: with no RQ-Transformer there is no
+prior, so it can reconstruct an image you hand it but cannot generate one from
+text. Its ~105M parameters are ~67 MB of codebook — which is what made the
+no-codebook decision here concrete rather than theoretical.
+
+- **Taken:** coarse → refine staging, and the empirical size breakdown.
+
+### StableDiffusion-1.5-Low-VRAM
+[Amineharrabi](https://github.com/Amineharrabi/StableDiffusion-1.5-Low-VRAM)
+
+LoRA fine-tuning and quantization of a *pretrained* SD 1.5 down to ~740 MB and
+~1 GB VRAM: 4-bit UNet, 8-bit CLIP, fp16 VAE, tiled decoding, CPU offload.
+
+- **Taken:** the mixed-precision policy — quantize per component, not globally,
+  because layers differ in how much damage they tolerate. That informs AS-I's
+  planned int8 export.
+- **Not applicable:** it starts from someone else's billion-parameter model.
+  Useful for shrinking, not for building.
+
+### I Made The Smallest (And Dumbest) Image Generation Model
+[youtube](https://www.youtube.com/watch?v=4PEAPLvfZFM)
+
+Squeezing SD 1.5 inference under 2 GB. Same framing — how small can this get —
+approached from compression rather than architecture. Named partly because it
+is where the "smallest and dumbest" framing for this half of the repo came from.
+
+### Also standing on
+- **Latent Diffusion** (Rombach et al., 2022) — diffuse in a compressed latent,
+  not in pixels.
+- **Classifier-free guidance** (Ho & Salimans, 2022) — train with the caption
+  dropped some of the time; extrapolate away from unconditional at sampling.
+- **Progressive Distillation** (Salimans & Ho, 2022) — the source of
+  v-prediction, which is what makes 8 steps viable.
+- **DDIM** (Song et al., 2020) — deterministic sampling on a timestep subset.
+- **OpenMoji** — the artwork, CC BY-SA 4.0.
+
+---
+
 ## Honest limitations
 
 - **Closed vocabulary.** ~1300 words. Unknown words are ignored, and `sample.py`
