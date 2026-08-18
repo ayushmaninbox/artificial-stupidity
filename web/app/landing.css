@@ -103,10 +103,11 @@
 .lp-nav-links a:hover { color: var(--d-ink); }
 
 .lp-cta {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--d-ink); color: var(--d-bg);
   padding: 8px 15px; border-radius: 7px;
   font-size: 14px; font-weight: 520; text-decoration: none;
+  border: 1px solid transparent;   /* so ghost's border does not add height */
   transition: transform 0.15s ease, opacity 0.15s ease;
 }
 .lp-cta:hover { transform: translateY(-1px); opacity: 0.9; }
@@ -167,7 +168,11 @@
 .lp-hero h1 { margin-bottom: 16px; }
 .lp-hero h1 .dim { color: var(--d-ink-3); }
 .lp-hero .lead { margin: 0 auto 26px; text-align: center; }
-.lp-hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.lp-hero-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+/* hero pair: identical box, so neither reads as the odd one out */
+.lp-hero-actions .lp-cta {
+  min-width: 168px; padding: 11px 22px; font-size: 15px; border-radius: 8px;
+}
 
 /* ------------------------------------------------- terminal (hero visual) */
 

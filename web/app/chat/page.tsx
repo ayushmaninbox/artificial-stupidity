@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { MODELS, byId, type ModelId } from "../models";
+import { loadConvos, saveConvos, titleFor, newId, type Convo } from "../history";
 
 type Turn = { who: "user" | "bot"; text: string };
 type Phase = "cold" | "loading" | "ready" | "generating";
@@ -22,12 +24,42 @@ export default function Page() {
   const [draft, setDraft] = useState("");
   const [temp, setTemp] = useState(0.9);
   const [problem, setProblem] = useState<string | null>(null);
+  const [model, setModel] = useState<ModelId>("AS-F");
+  const [picker, setPicker] = useState(false);
+  const [convos, setConvos] = useState<Convo[]>([]);
+  const [convoId, setConvoId] = useState<string>(() => newId());
+  const [drawer, setDrawer] = useState(false);
 
   const worker = useRef<Worker | null>(null);
   const foot = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const waiting = useRef<string | null>(null);
   const run = useRef<(t: string) => void>(() => {});
+
+  useEffect(() => {
+    setConvos(loadConvos());
+    const last = localStorage.getItem("as.model");
+    if (last && MODELS.some((m) => m.id === last && m.ready)) setModel(last as ModelId);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("as.model", model);
+  }, [model]);
+
+  // Persist after every completed exchange, not on every token — writing
+  // localStorage inside the streaming loop stutters the whole reply.
+  useEffect(() => {
+    if (!turns.length || phase === "generating") return;
+    setConvos((prev) => {
+      const rest = prev.filter((c) => c.id !== convoId);
+      const next: Convo[] = [
+        { id: convoId, title: titleFor(turns), at: Date.now(), model, turns },
+        ...rest,
+      ];
+      saveConvos(next);
+      return next;
+    });
+  }, [turns, phase, convoId, model]);
 
   useEffect(() => {
     // Plain file in public/, not bundled — see the top of public/worker.js.
@@ -99,7 +131,7 @@ export default function Page() {
     (text: string) => {
       setTurns((t) => [...t, { who: "bot", text: "" }]);
       setPhase("generating");
-      worker.current?.postMessage({ type: "ask", text, temperature: temp });
+      worker.current?.postMessage({ type: "ask", text, temperature: temp, model });
     },
     [temp],
   );
@@ -128,7 +160,7 @@ export default function Page() {
       waiting.current = text;
       if (phase === "cold") {
         setPhase("loading");
-        worker.current?.postMessage({ type: "load" });
+        worker.current?.postMessage({ type: "load", model });
       }
     },
     [phase, generate],
@@ -145,12 +177,61 @@ export default function Page() {
           <Link href="/" className="home" aria-label="Back to the overview">
             <img className="logo" src="/as-f.png" alt="" />
           </Link>
-          <div>
+          <div className="head-mid">
             <div className="title">
               <Link href="/">Artificial Stupidity</Link>
             </div>
-            <div className="subtitle">124M parameters, running in your browser</div>
+            <div className="picker">
+              <button
+                className="pick-btn"
+                onClick={() => setPicker((v) => !v)}
+                aria-expanded={picker}
+                aria-haspopup="listbox"
+              >
+                <b>{model}</b>
+                <span>{byId(model).size}</span>
+                <svg width="9" height="6" viewBox="0 0 9 6" aria-hidden>
+                  <path d="M1 1l3.5 3.5L8 1" stroke="currentColor" strokeWidth="1.4" fill="none" />
+                </svg>
+              </button>
+              {picker && (
+                <>
+                  <div className="pick-veil" onClick={() => setPicker(false)} />
+                  <div className="pick-menu" role="listbox">
+                    <div className="pick-group">Text · answers questions</div>
+                    {MODELS.filter((m) => m.family === "text").map((m) => (
+                      <button
+                        key={m.id}
+                        role="option"
+                        aria-selected={m.id === model}
+                        className={`pick-row${m.id === model ? " on" : ""}`}
+                        onClick={() => { setModel(m.id); setPicker(false); }}
+                      >
+                        <span className="pick-id">{m.id}</span>
+                        <span className="pick-blurb">{m.blurb}</span>
+                        <span className="pick-size">{m.size}</span>
+                      </button>
+                    ))}
+                    <div className="pick-group">Image · not wired up yet</div>
+                    {MODELS.filter((m) => m.family === "image").map((m) => (
+                      <button key={m.id} className="pick-row" disabled title="Needs an ONNX export and an image output mode — coming next">
+                        <span className="pick-id">{m.id}</span>
+                        <span className="pick-blurb">{m.blurb}</span>
+                        <span className="pick-size">{m.size}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
+          <button className="hist-btn" onClick={() => setDrawer(true)} title="Saved conversations">
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
+              <path d="M2 3.5h11M2 7.5h11M2 11.5h7" stroke="currentColor" strokeWidth="1.4"
+                    strokeLinecap="round" fill="none" />
+            </svg>
+            {convos.length > 0 && <i>{convos.length}</i>}
+          </button>
           <div className="state">
             <span className={`led ${busy ? "busy" : phase === "ready" ? "ready" : ""}`} />
             {phase === "cold" && "idle"}
@@ -309,6 +390,75 @@ export default function Page() {
           </div>
         </form>
       </div>
+      {drawer && (
+        <>
+          <div className="veil" onClick={() => setDrawer(false)} />
+          <aside className="drawer" aria-label="Saved conversations">
+            <div className="drawer-top">
+              <b>Saved here only</b>
+              <button className="x" onClick={() => setDrawer(false)} aria-label="Close">×</button>
+            </div>
+            <p className="drawer-note">
+              Conversations are kept in this browser and never uploaded. Clearing
+              site data removes them.
+            </p>
+
+            <button
+              className="drawer-new"
+              onClick={() => { setTurns([]); setConvoId(newId()); setDrawer(false); }}
+            >
+              + New conversation
+            </button>
+
+            <div className="drawer-list">
+              {convos.length === 0 && <div className="drawer-empty">Nothing saved yet.</div>}
+              {convos.map((c) => (
+                <div key={c.id} className={`drawer-item${c.id === convoId ? " on" : ""}`}>
+                  <button
+                    className="drawer-open"
+                    onClick={() => {
+                      setTurns(c.turns);
+                      setConvoId(c.id);
+                      if (MODELS.some((m) => m.id === c.model && m.ready)) setModel(c.model as ModelId);
+                      setDrawer(false);
+                    }}
+                  >
+                    <span className="drawer-title">{c.title}</span>
+                    <span className="drawer-meta">
+                      {c.model} · {new Date(c.at).toLocaleDateString()}
+                    </span>
+                  </button>
+                  <button
+                    className="drawer-del"
+                    aria-label={`Delete ${c.title}`}
+                    onClick={() => {
+                      const next = convos.filter((x) => x.id !== c.id);
+                      setConvos(next);
+                      saveConvos(next);
+                      if (c.id === convoId) { setTurns([]); setConvoId(newId()); }
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {convos.length > 0 && (
+              <button
+                className="drawer-clear"
+                onClick={() => {
+                  if (!confirm("Delete every saved conversation? This cannot be undone.")) return;
+                  setConvos([]); saveConvos([]); setTurns([]); setConvoId(newId());
+                }}
+              >
+                Delete all {convos.length}
+              </button>
+            )}
+          </aside>
+        </>
+      )}
+
     </div>
   );
 }

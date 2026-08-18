@@ -1,0 +1,56 @@
+{
+  "AS-0": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 32,
+    "params": 815488,
+    "packed": 3203840,
+    "onnx": 259196,
+    "val": 1.6424
+  },
+  "AS-1": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 8,
+    "params": 819072,
+    "packed": 860928,
+    "onnx": 567179,
+    "val": 1.715
+  },
+  "AS-2": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 4,
+    "params": 819072,
+    "packed": 467712,
+    "onnx": 567179,
+    "val": 1.7331
+  },
+  "AS-3": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 1.58,
+    "params": 819072,
+    "packed": 231792,
+    "onnx": 543294,
+    "val": 1.745
+  },
+  "AS-4": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 1,
+    "params": 819072,
+    "packed": 172800,
+    "onnx": 518363,
+    "val": 1.7556
+  },
+  "AS-5": {
+    "block": 128,
+    "vocab": 90,
+    "bits": 1,
+    "params": 355392,
+    "packed": 93888,
+    "onnx": 573802,
+    "val": 1.9447
+  }
+}

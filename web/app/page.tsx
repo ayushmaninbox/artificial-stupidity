@@ -175,10 +175,6 @@ export default function Landing() {
         <div className="lp-glow" />
         <div className="lp-grid-floor" />
         <div className="lp-wrap lp-hero-in">
-          <div className="lp-badge">
-            <span className="lp-dot" />
-            <b>4 models</b> trained on one laptop
-          </div>
           <h1>
             Fluent. Confident.
             <br />
