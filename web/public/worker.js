@@ -497,23 +497,25 @@ const partialPut = (k, v) => idbOp("readwrite", (st) => st.put(v, k));
 const partialDel = (k) => idbOp("readwrite", (st) => st.delete(k));
 
 /**
- * Download to Cache Storage, then hand ORT the URL rather than the bytes.
+ * Download once, keep it in Cache Storage, and return the BYTES.
  *
- * `InferenceSession.create(uint8Array)` needs the weights alive twice at once:
- * the JS array we downloaded, plus ORT's copy inside the WASM heap. For a
- * 325 MB model that peaks around 780 MB, which is exactly the allocation that
- * fails. Giving ORT a URL lets it stream into WASM directly, so the JS copy
- * never exists — and because the file is already in Cache Storage, nothing is
- * fetched twice.
+ * An earlier version returned the URL instead, so ORT would fetch it itself
+ * and stream into WASM without a second copy. That was an optimisation for an
+ * out-of-memory problem that turned out not to exist, and it broke every image
+ * model: session creation aborted with a bare WASM pointer and no message.
+ *
+ * The tell was that AS-0..AS-5 kept working throughout — they were the only
+ * models still being handed a Uint8Array. Same runtime, same quantisation,
+ * same worker; the only difference was bytes versus URL.
  */
 async function ensureCached(url, id, onBytes) {
   try {
     const cache = await caches.open("transformers-cache");
     const hit = await cache.match(url);
     if (hit) {
-      const len = Number(hit.headers.get("content-length")) || 0;
-      if (len) onBytes(len, len);
-      return url;
+      const buf = new Uint8Array(await hit.arrayBuffer());
+      onBytes(buf.length, buf.length);
+      return buf;
     }
     const bytes = await fetchBytes(url, id, onBytes);
     await cache.put(
@@ -523,9 +525,9 @@ async function ensureCached(url, id, onBytes) {
                    "content-length": String(bytes.length) },
       }),
     );
-    return url;
+    return bytes;
   } catch {
-    // no Cache API (private mode) — fall back to bytes and accept the peak
+    // no Cache API (private browsing, quota) — the download still works
     return fetchBytes(url, id, onBytes);
   }
 }
@@ -576,6 +578,7 @@ async function fetchBytes(url, id, onBytes) {
 
 async function loadImage(id) {
   if (imgCache.has(id)) return imgCache.get(id);
+  await releaseAllBut(id);
   const ort = await getOrtGpu();
   const base = `${IMG_BASE}/${id}`;
 
@@ -589,15 +592,15 @@ async function loadImage(id) {
   };
 
   const opt = await SESSION_OPTS(true);
-  const tU = await ensureCached(`${base}/text.onnx`, id, bump);
-  const uU = await ensureCached(`${base}/unet.onnx`, id, bump);
-  const dU = await ensureCached(`${base}/decoder.onnx`, id, bump);
+  const tB = await ensureCached(`${base}/text.onnx`, id, bump);
+  const uB = await ensureCached(`${base}/unet.onnx`, id, bump);
+  const dB = await ensureCached(`${base}/decoder.onnx`, id, bump);
   const entry = {
     cfg,
     stoi: new Map(cfg.vocab.map((w, i) => [w, i])),
-    text: await ort.InferenceSession.create(tU, opt),
-    unet: await ort.InferenceSession.create(uU, opt),
-    dec: await ort.InferenceSession.create(dU, opt),
+    text: await ort.InferenceSession.create(tB, opt),
+    unet: await ort.InferenceSession.create(uB, opt),
+    dec: await ort.InferenceSession.create(dB, opt),
   };
   imgCache.set(id, entry);
   return entry;
@@ -702,8 +705,46 @@ const SD_BASE = `https://huggingface.co/${SD_REPO}/resolve/main`;
    download is a worse experience than not starting. */
 const SD_NEEDS_MB = 700;
 
+/**
+ * Free every model we are not about to use.
+ *
+ * AS-F is fetched automatically when the page opens, so a visitor who then
+ * picks AS-IF is asking a second runtime for 325 MB while the first still
+ * holds 164 MB plus transformers.js's own arena — and nothing ever released
+ * it. Small models coexist happily, which is why this only ever showed up on
+ * the big one.
+ *
+ * Sessions are re-created on demand, so the only cost of being wrong here is
+ * a reload, not a re-download: the weights stay in Cache Storage.
+ */
+async function releaseAllBut(keep) {
+  for (const [id, entry] of imgCache) {
+    if (id === keep) continue;
+    for (const k of ["text", "unet", "dec"]) {
+      try { await entry[k]?.release?.(); } catch {}
+    }
+    imgCache.delete(id);
+  }
+  for (const [id, entry] of charCache) {
+    if (id === keep) continue;
+    try { await entry.session?.release?.(); } catch {}
+    charCache.delete(id);
+  }
+  if (keep !== "AS-F" && generator) {
+    try { await generator.dispose?.(); } catch {}
+    generator = null;
+  }
+  if (keep !== "AS-IF" && sdCache) {
+    for (const k of ["text", "unet", "dec"]) {
+      try { await sdCache[k]?.release?.(); } catch {}
+    }
+    sdCache = null;
+  }
+}
+
 async function loadSD() {
   if (sdCache) return sdCache;
+  await releaseAllBut("AS-IF");     // give the big one a clear heap
   const ort = await getOrtGpu();
 
   const caps = await capabilities();
@@ -748,14 +789,14 @@ async function loadSD() {
   const heavy = await SESSION_OPTS(true);
   const light = await SESSION_OPTS(false);
 
-  const uU = await ensureCached(`${b}/unet/model.onnx`, "AS-IF", bump);
-  const unet = await ort.InferenceSession.create(uU, heavy);
+  const uB = await ensureCached(`${b}/unet/model.onnx`, "AS-IF", bump);
+  const unet = await ort.InferenceSession.create(uB, heavy);
 
-  const tU = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
-  const text = await ort.InferenceSession.create(tU, light);
+  const tB = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
+  const text = await ort.InferenceSession.create(tB, light);
 
-  const dU = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
-  const dec = await ort.InferenceSession.create(dU, light);
+  const dB = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
+  const dec = await ort.InferenceSession.create(dB, light);
 
   sdCache = { cfg, tok, text, unet, dec };
   // handlers[0] is what ORT settled on after dropping anything unavailable —
