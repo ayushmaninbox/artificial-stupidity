@@ -8,7 +8,9 @@
  * that crashes because it could not save history is worse than one that
  * forgets. */
 
-export type Turn = { who: "user" | "bot"; text: string; model?: string };
+/* "note" is a transcript marker rather than a message — a model switch,
+   recorded so a saved conversation still says which model wrote what. */
+export type Turn = { who: "user" | "bot" | "note"; text: string; model?: string };
 export type Convo = { id: string; title: string; at: number; model: string; turns: Turn[] };
 
 const KEY = "as.convos.v1";
@@ -34,6 +36,7 @@ export function saveConvos(list: Convo[]) {
 }
 
 export function titleFor(turns: Turn[]) {
+  // notes are markers, never a title
   const first = turns.find((t) => t.who === "user")?.text ?? "New chat";
   return first.length > 42 ? `${first.slice(0, 42)}…` : first;
 }

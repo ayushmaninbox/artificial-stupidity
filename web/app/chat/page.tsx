@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MODELS, byId, type ModelId } from "../models";
 import { loadConvos, saveConvos, titleFor, newId, type Convo } from "../history";
 
-type Turn = { who: "user" | "bot"; text: string };
+type Turn = { who: "user" | "bot" | "note"; text: string };
 type Phase = "cold" | "loading" | "ready" | "generating";
 
 const CUES = [
@@ -28,7 +28,8 @@ export default function Page() {
   const [picker, setPicker] = useState(false);
   const [convos, setConvos] = useState<Convo[]>([]);
   const [convoId, setConvoId] = useState<string>(() => newId());
-  const [drawer, setDrawer] = useState(false);
+  const [rail, setRail] = useState(false);      // sidebar open on mobile
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const worker = useRef<Worker | null>(null);
   const foot = useRef<HTMLDivElement>(null);
@@ -45,6 +46,18 @@ export default function Page() {
   useEffect(() => {
     localStorage.setItem("as.model", model);
   }, [model]);
+
+  /** Switch model and record it in the transcript, so a reply can always be
+      attributed to the thing that produced it when reading back. */
+  const pickModel = useCallback((next: ModelId) => {
+    setModel((prev) => {
+      if (prev === next) return prev;
+      setTurns((t) =>
+        t.length ? [...t, { who: "note" as const, text: `Switched to ${next}` }] : t,
+      );
+      return next;
+    });
+  }, []);
 
   // Persist after every completed exchange, not on every token — writing
   // localStorage inside the streaming loop stutters the whole reply.
@@ -133,7 +146,10 @@ export default function Page() {
       setPhase("generating");
       worker.current?.postMessage({ type: "ask", text, temperature: temp, model });
     },
-    [temp],
+    // `model` MUST be here. Without it this closure keeps whatever model was
+    // selected at mount — every request went out as AS-F while the picker
+    // happily showed AS-4, which looks exactly like "the models are identical".
+    [temp, model],
   );
 
   useEffect(() => {
@@ -163,7 +179,7 @@ export default function Page() {
         worker.current?.postMessage({ type: "load", model });
       }
     },
-    [phase, generate],
+    [phase, generate, model],
   );
 
   const pct = got.total ? Math.min(100, (got.loaded / got.total) * 100) : 0;
@@ -171,7 +187,73 @@ export default function Page() {
   const busy = phase === "generating" || pending;
 
   return (
-    <div className="app">
+    <div className={`app${rail ? " rail-open" : ""}`}>
+      {/* ------------------------------------------------- conversations rail */}
+      <aside className="rail" aria-label="Conversations">
+        <div className="rail-top">
+          <button
+            className="rail-new"
+            onClick={() => { setTurns([]); setConvoId(newId()); setRail(false); }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
+              <path d="M6.5 1.5v10M1.5 6.5h10" stroke="currentColor" strokeWidth="1.5"
+                    strokeLinecap="round" />
+            </svg>
+            New chat
+          </button>
+          <button className="rail-close only-narrow" onClick={() => setRail(false)} aria-label="Close">×</button>
+        </div>
+
+        <div className="rail-list">
+          {convos.length === 0 && <p className="rail-empty">No saved chats yet.</p>}
+          {convos.map((c) => (
+            <div key={c.id} className={`rail-item${c.id === convoId ? " on" : ""}`}>
+              <button
+                className="rail-open"
+                onClick={() => {
+                  setTurns(c.turns);
+                  setConvoId(c.id);
+                  if (MODELS.some((m) => m.id === c.model && m.ready)) setModel(c.model as ModelId);
+                  setRail(false);
+                }}
+                title={c.title}
+              >
+                {c.title}
+              </button>
+              {confirmId === c.id ? (
+                <span className="rail-confirm">
+                  <button
+                    onClick={() => {
+                      const next = convos.filter((x) => x.id !== c.id);
+                      setConvos(next); saveConvos(next); setConfirmId(null);
+                      if (c.id === convoId) { setTurns([]); setConvoId(newId()); }
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button onClick={() => setConfirmId(null)}>Keep</button>
+                </span>
+              ) : (
+                <button className="rail-del" onClick={() => setConfirmId(c.id)}
+                        aria-label={`Delete ${c.title}`}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden>
+                    <path d="M2.5 3.5h8M5 3.5V2.5h3v1M3.5 3.5l.5 7h5l.5-7"
+                          stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="rail-foot">
+          <span>Saved in this browser only</span>
+        </div>
+      </aside>
+
+      {rail && <div className="rail-veil only-narrow" onClick={() => setRail(false)} />}
+
+      <div className="main">
       <header className="top">
         <div className="top-in">
           <Link href="/" className="home" aria-label="Back to the overview">
@@ -181,64 +263,6 @@ export default function Page() {
             <div className="title">
               <Link href="/">Artificial Stupidity</Link>
             </div>
-            <div className="picker">
-              <button
-                className="pick-btn"
-                onClick={() => setPicker((v) => !v)}
-                aria-expanded={picker}
-                aria-haspopup="listbox"
-              >
-                <b>{model}</b>
-                <span>{byId(model).size}</span>
-                <svg width="9" height="6" viewBox="0 0 9 6" aria-hidden>
-                  <path d="M1 1l3.5 3.5L8 1" stroke="currentColor" strokeWidth="1.4" fill="none" />
-                </svg>
-              </button>
-              {picker && (
-                <>
-                  <div className="pick-veil" onClick={() => setPicker(false)} />
-                  <div className="pick-menu" role="listbox">
-                    <div className="pick-group">Text · answers questions</div>
-                    {MODELS.filter((m) => m.family === "text").map((m) => (
-                      <button
-                        key={m.id}
-                        role="option"
-                        aria-selected={m.id === model}
-                        className={`pick-row${m.id === model ? " on" : ""}`}
-                        onClick={() => { setModel(m.id); setPicker(false); }}
-                      >
-                        <span className="pick-id">{m.id}</span>
-                        <span className="pick-blurb">{m.blurb}</span>
-                        <span className="pick-size">{m.size}</span>
-                      </button>
-                    ))}
-                    <div className="pick-group">Image · not wired up yet</div>
-                    {MODELS.filter((m) => m.family === "image").map((m) => (
-                      <button key={m.id} className="pick-row" disabled title="Needs an ONNX export and an image output mode — coming next">
-                        <span className="pick-id">{m.id}</span>
-                        <span className="pick-blurb">{m.blurb}</span>
-                        <span className="pick-size">{m.size}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-          <button className="hist-btn" onClick={() => setDrawer(true)} title="Saved conversations">
-            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
-              <path d="M2 3.5h11M2 7.5h11M2 11.5h7" stroke="currentColor" strokeWidth="1.4"
-                    strokeLinecap="round" fill="none" />
-            </svg>
-            {convos.length > 0 && <i>{convos.length}</i>}
-          </button>
-          <div className="state">
-            <span className={`led ${busy ? "busy" : phase === "ready" ? "ready" : ""}`} />
-            {phase === "cold" && "idle"}
-            {phase === "loading" &&
-              (got.total ? `loading ${mb(got.loaded)} / ${mb(got.total)}` : "loading")}
-            {phase === "ready" && "ready"}
-            {phase === "generating" && "writing"}
           </div>
         </div>
         {/* One thin line under the header, and it disappears for good once the
@@ -299,7 +323,11 @@ export default function Page() {
           )}
 
           {turns.map((t, i) =>
-            t.who === "user" ? (
+            t.who === "note" ? (
+              <div key={i} className="turn note">
+                <span>{t.text}</span>
+              </div>
+            ) : t.who === "user" ? (
               <div key={i} className="turn user">
                 <div>{t.text}</div>
               </div>
@@ -307,7 +335,7 @@ export default function Page() {
               <div key={i} className="turn bot">
                 <img className="face" src="/as-f.png" alt="" />
                 <div className="say">
-                  <span className="who">Artificial Stupidity</span>
+                  <span className="who">{model}</span>
                   {t.text}
                   {phase === "generating" && i === turns.length - 1 && (
                     <span className="tick" aria-hidden />
@@ -323,7 +351,7 @@ export default function Page() {
             <div className="turn bot">
               <img className="face" src="/as-f.png" alt="" />
               <div className="say">
-                <span className="who">Artificial Stupidity</span>
+                <span className="who">{model}</span>
                 <span className="thinking">
                   {got.total
                     ? `Loading the model, ${pct.toFixed(0)}% — it answers as soon as this finishes.`
@@ -362,6 +390,60 @@ export default function Page() {
                 }
               }}
             />
+            <div className="box-tools">
+              <div className="picker">
+                <button
+                  type="button"
+                  className="pick-btn"
+                  onClick={() => setPicker((v) => !v)}
+                  aria-expanded={picker}
+                  aria-haspopup="listbox"
+                >
+                  <b>{model}</b>
+                  <svg width="9" height="6" viewBox="0 0 9 6" aria-hidden>
+                    <path d="M1 1l3.5 3.5L8 1" stroke="currentColor" strokeWidth="1.4" fill="none" />
+                  </svg>
+                </button>
+                {picker && (
+                  <>
+                    <div className="pick-veil" onClick={() => setPicker(false)} />
+                    <div className="pick-menu" role="listbox">
+                      <div className="pick-group">Text · answers questions</div>
+                      {MODELS.filter((m) => m.family === "text").map((m) => (
+                        <button
+                          type="button"
+                          key={m.id}
+                          role="option"
+                          aria-selected={m.id === model}
+                          className={`pick-row${m.id === model ? " on" : ""}`}
+                          onClick={() => { pickModel(m.id); setPicker(false); }}
+                        >
+                          <span className="pick-id">{m.id}</span>
+                          <span className="pick-blurb">{m.blurb}</span>
+                          <span className="pick-size">{m.size}</span>
+                        </button>
+                      ))}
+                      <div className="pick-group">Image · draws instead of writing</div>
+                      {MODELS.filter((m) => m.family === "image").map((m) => (
+                        <button
+                          type="button"
+                          key={m.id}
+                          role="option"
+                          aria-selected={m.id === model}
+                          className={`pick-row${m.id === model ? " on" : ""}${m.ready ? "" : " soon"}`}
+                          disabled={!m.ready}
+                          onClick={() => { pickModel(m.id); setPicker(false); }}
+                        >
+                          <span className="pick-id">{m.id}</span>
+                          <span className="pick-blurb">{m.blurb}</span>
+                          <span className="pick-size">{m.ready ? m.size : "soon"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
             <button className="go" type="submit" disabled={busy || !draft.trim()} aria-label="Send">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9">
                 <path d="M8 13.5V2.5M3.5 7L8 2.5 12.5 7" strokeLinecap="round" strokeLinejoin="round" />
@@ -390,75 +472,7 @@ export default function Page() {
           </div>
         </form>
       </div>
-      {drawer && (
-        <>
-          <div className="veil" onClick={() => setDrawer(false)} />
-          <aside className="drawer" aria-label="Saved conversations">
-            <div className="drawer-top">
-              <b>Saved here only</b>
-              <button className="x" onClick={() => setDrawer(false)} aria-label="Close">×</button>
-            </div>
-            <p className="drawer-note">
-              Conversations are kept in this browser and never uploaded. Clearing
-              site data removes them.
-            </p>
-
-            <button
-              className="drawer-new"
-              onClick={() => { setTurns([]); setConvoId(newId()); setDrawer(false); }}
-            >
-              + New conversation
-            </button>
-
-            <div className="drawer-list">
-              {convos.length === 0 && <div className="drawer-empty">Nothing saved yet.</div>}
-              {convos.map((c) => (
-                <div key={c.id} className={`drawer-item${c.id === convoId ? " on" : ""}`}>
-                  <button
-                    className="drawer-open"
-                    onClick={() => {
-                      setTurns(c.turns);
-                      setConvoId(c.id);
-                      if (MODELS.some((m) => m.id === c.model && m.ready)) setModel(c.model as ModelId);
-                      setDrawer(false);
-                    }}
-                  >
-                    <span className="drawer-title">{c.title}</span>
-                    <span className="drawer-meta">
-                      {c.model} · {new Date(c.at).toLocaleDateString()}
-                    </span>
-                  </button>
-                  <button
-                    className="drawer-del"
-                    aria-label={`Delete ${c.title}`}
-                    onClick={() => {
-                      const next = convos.filter((x) => x.id !== c.id);
-                      setConvos(next);
-                      saveConvos(next);
-                      if (c.id === convoId) { setTurns([]); setConvoId(newId()); }
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {convos.length > 0 && (
-              <button
-                className="drawer-clear"
-                onClick={() => {
-                  if (!confirm("Delete every saved conversation? This cannot be undone.")) return;
-                  setConvos([]); saveConvos([]); setTurns([]); setConvoId(newId());
-                }}
-              >
-                Delete all {convos.length}
-              </button>
-            )}
-          </aside>
-        </>
-      )}
-
+      </div>
     </div>
   );
 }

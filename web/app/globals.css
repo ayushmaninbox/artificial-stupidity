@@ -47,7 +47,8 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-.app { display: flex; flex-direction: column; height: 100dvh; }
+.app { display: grid; grid-template-columns: 248px 1fr; height: 100dvh; }
+.main { display: flex; flex-direction: column; min-width: 0; height: 100dvh; }
 
 /* ----------------------------------------------------------------- header */
 
@@ -395,60 +396,144 @@ body {
   display: grid; place-items: center; padding: 0 3px;
 }
 
-/* ------------------------------------------------------------- drawer */
 
-.veil {
-  position: fixed; inset: 0; z-index: 60;
-  background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px);
-}
-.drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 61;
-  width: min(340px, 88vw); background: var(--panel);
-  border-left: 1px solid var(--line); padding: 16px 14px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.drawer-top { display: flex; align-items: center; justify-content: space-between; }
-.drawer-top b { font-size: 14px; }
-.drawer .x {
-  background: none; border: 0; color: var(--ink-3); font-size: 21px;
-  line-height: 1; cursor: pointer; padding: 0 4px;
-}
-.drawer .x:hover { color: var(--ink); }
-.drawer-note { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+/* ============================================================ sidebar ==
 
-.drawer-new {
+   A persistent rail at desktop width and a slide-over below 860px, which is
+   the shape people already know from every chat product. It is a grid column
+   rather than a fixed overlay so the thread never sits underneath it.        */
+
+.rail {
+  border-right: 1px solid var(--line); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 0; padding: 10px;
+}
+.rail-top { display: flex; gap: 6px; align-items: center; }
+.rail-new {
+  flex: 1; display: inline-flex; align-items: center; gap: 8px;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
-  border-radius: 8px; padding: 8px 11px; font: inherit; font-size: 13px;
-  cursor: pointer; text-align: left;
+  border-radius: 9px; padding: 9px 11px; font: inherit; font-size: 13.5px;
+  cursor: pointer; transition: border-color 0.16s ease;
 }
-.drawer-new:hover { border-color: var(--ink-3); }
+.rail-new:hover { border-color: var(--ink-3); }
+.rail-close {
+  background: none; border: 0; color: var(--ink-3); font-size: 22px;
+  cursor: pointer; padding: 0 6px; line-height: 1;
+}
 
-.drawer-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
-.drawer-empty { font-size: 12.5px; color: var(--ink-3); padding: 10px 2px; }
-.drawer-item { display: flex; align-items: stretch; border-radius: 8px; }
-.drawer-item:hover { background: var(--panel-2); }
-.drawer-item.on { background: var(--accent-2); }
-.drawer-open {
+.rail-list {
+  flex: 1; min-height: 0; overflow-y: auto; margin-top: 12px;
+  display: flex; flex-direction: column; gap: 1px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.rail-empty { font-size: 12.5px; color: var(--ink-3); padding: 8px 4px; }
+
+.rail-item {
+  display: flex; align-items: center; border-radius: 8px; padding-right: 4px;
+}
+.rail-item:hover { background: var(--panel-2); }
+.rail-item.on { background: var(--accent-2); }
+.rail-open {
   flex: 1; min-width: 0; text-align: left; background: none; border: 0;
-  cursor: pointer; padding: 8px 10px; font: inherit; color: var(--ink);
-  display: grid; gap: 2px;
+  color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer;
+  padding: 9px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.drawer-title {
-  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.drawer-meta { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
-.drawer-del {
-  background: none; border: 0; color: var(--ink-3); cursor: pointer;
-  padding: 0 10px; font-size: 17px; line-height: 1;
-}
-.drawer-del:hover { color: var(--danger); }
+.rail-item.on .rail-open, .rail-item:hover .rail-open { color: var(--ink); }
 
-.drawer-clear {
-  border: 1px solid var(--line); background: none; color: var(--ink-2);
-  border-radius: 8px; padding: 8px; font: inherit; font-size: 12.5px; cursor: pointer;
+.rail-del {
+  background: none; border: 0; color: transparent; cursor: pointer;
+  padding: 5px; display: grid; place-items: center; border-radius: 6px;
 }
-.drawer-clear:hover { border-color: var(--danger); color: var(--danger); }
+.rail-item:hover .rail-del { color: var(--ink-3); }
+.rail-del:hover { color: var(--danger); }
 
-@media (max-width: 560px) {
-  .pick-btn span { display: none; }
+/* deletion asks first — a one-click destroy of a saved chat is not recoverable */
+.rail-confirm { display: flex; gap: 4px; padding-right: 2px; }
+.rail-confirm button {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
+  border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 11px; cursor: pointer;
+}
+.rail-confirm button:first-child { color: var(--danger); border-color: var(--danger); }
+.rail-confirm button:hover { background: var(--panel-2); }
+
+.rail-foot {
+  border-top: 1px solid var(--line); margin-top: 8px; padding-top: 9px;
+  font-size: 11px; color: var(--ink-3);
+}
+
+.rail-veil { display: none; }
+.only-narrow { display: none; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .rail {
+    position: fixed; top: 0; bottom: 0; left: 0; width: 264px; z-index: 61;
+    transform: translateX(-100%); transition: transform 0.22s cubic-bezier(0.22,1,0.36,1);
+  }
+  .app.rail-open .rail { transform: none; }
+  .rail-veil {
+    display: block; position: fixed; inset: 0; z-index: 60;
+    background: rgba(0,0,0,0.5);
+  }
+  .only-narrow { display: inline-grid; }
+  .rail-close { display: block; }
+}
+
+/* ================================================ picker in the composer */
+
+.box { position: relative; }
+.box-tools { position: absolute; left: 10px; bottom: 9px; }
+
+.picker { position: relative; }
+.pick-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--ink-2); padding: 4px 9px; border-radius: 7px;
+  font: inherit; font-size: 12px; cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.pick-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+.pick-btn b { color: var(--ink); font-weight: 550; font-family: var(--mono); font-size: 11.5px; }
+.pick-btn svg { opacity: 0.55; }
+
+.pick-veil { position: fixed; inset: 0; z-index: 40; }
+.pick-menu {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 41;
+  width: min(430px, calc(100vw - 48px));
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 11px; padding: 5px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  max-height: 58vh; overflow-y: auto;
+}
+.pick-group {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--ink-3); padding: 9px 10px 5px; font-family: var(--mono);
+}
+.pick-row {
+  display: grid; grid-template-columns: 66px 1fr auto; gap: 10px; align-items: baseline;
+  width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+  padding: 8px 10px; border-radius: 7px; font: inherit; color: var(--ink);
+}
+.pick-row:hover:not(:disabled) { background: var(--panel-2); }
+.pick-row.on { background: var(--accent-2); }
+.pick-row:disabled { opacity: 0.4; cursor: not-allowed; }
+.pick-id { font-family: var(--mono); font-size: 12.5px; }
+.pick-row.on .pick-id { color: var(--accent); }
+.pick-blurb { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+.pick-size { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+/* the textarea must not run under the picker */
+.box textarea { padding-bottom: 42px; }
+
+/* ------------------------------------------- model switch marker in thread */
+
+.turn.note {
+  display: flex; align-items: center; gap: 10px; margin: 14px 0;
+  color: var(--ink-3); font-size: 12px;
+}
+.turn.note::before, .turn.note::after {
+  content: ""; height: 1px; background: var(--line); flex: 1;
+}
+.turn.note span {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em;
+  white-space: nowrap;
 }
