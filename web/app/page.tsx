@@ -3,7 +3,10 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import "./landing.css";
-import { LossCurves, PrecisionCost, SizeScale, LatentGrid } from "./charts";
+import {
+  LossCurves, PrecisionCost, SizeScale, LatentGrid,
+  CorpusMix, Tokenisation, Compression, BrowserFlow, Scoring,
+} from "./charts";
 
 type Pt = [number, number];
 
@@ -38,6 +41,21 @@ const SCALE = [
   { name: "AS-I", bytes: 14_000_000, mine: true, label: "14 MB — draws pictures" },
   { name: "AS-F", bytes: 164_000_000, mine: true, label: "164 MB int8" },
   { name: "AS-IF", bytes: 1_216_000_000, mine: false, label: "1.2 GB — not mine" },
+];
+
+const CORPUS = [
+  { name: "Twitch chat (live)", mb: 36.0, what: "reacting in five words or less" },
+  { name: "Reddit comments", mb: 24.0, what: "real arguments between real humans" },
+  { name: "YouTube transcripts", mb: 17.9, what: "24 channels talking nonstop" },
+  { name: "Twitch chat (dump)", mb: 15.0, what: "more of the same" },
+  { name: "Song lyrics", mb: 15.0, what: "so it can write a song" },
+  { name: "Synthetic arithmetic", mb: 9.0, what: "so it can do maths, badly" },
+];
+
+const COMPRESSION = [
+  { name: "UNet", before: 3200, after: 869, note: "int8" },
+  { name: "Text encoder", before: 1300, after: 342, note: "int8" },
+  { name: "VAE decoder", before: 189, after: 4.9, note: "replaced with TAESD" },
 ];
 
 const DIALS = [
@@ -221,7 +239,20 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="lp-cards lp-in" style={{ marginTop: 44 }}>
+          <div className="lp-panel lp-in" style={{ marginTop: 24 }}>
+            <div className="lp-panel-head">
+              <h3>A model can only sound like what it has read</h3>
+              <span>116.9 MB · 4,023,624 lines · 64 minutes</span>
+            </div>
+            <p>
+              Textbooks in, textbook out. This one had to sound like the internet at 2am,
+              so the corpus is the loudest English available — scraped, cleaned and mixed
+              in deliberate proportions rather than whatever downloaded fastest.
+            </p>
+            <CorpusMix src={CORPUS} />
+          </div>
+
+          <div className="lp-cards lp-in" style={{ marginTop: 14 }}>
             <article className="lp-card">
               <h3>Speaking well <span className="lp-tag mine">dial up</span></h3>
               <p>
@@ -351,6 +382,19 @@ export default function Landing() {
               </table>
             </div>
           </div>
+
+          <div className="lp-panel lp-in" style={{ marginTop: 26 }}>
+            <div className="lp-panel-head">
+              <h3>Why the small ones cannot spell</h3>
+              <span>tokenisation</span>
+            </div>
+            <p>
+              The from-scratch models emit one character at a time, so a long word is a
+              long run of independent bets. AS-F emits whole word-pieces — which is why it
+              is the one that ships to the website.
+            </p>
+            <Tokenisation />
+          </div>
         </div>
       </section>
 
@@ -410,6 +454,39 @@ export default function Landing() {
               <path className="flow" d="M391 90 v14 h-0" style={{ markerEnd: "none" }} />
               <text className="sub" x="391" y="114" textAnchor="middle">×8 — each pass removes a little noise</text>
             </svg>
+          </div>
+
+          <div className="lp-panel lp-in" style={{ marginTop: 14 }}>
+            <div className="lp-panel-head">
+              <h3>What each of the eight passes actually produces</h3>
+              <span>real frames · &ldquo;a large red heart in the center&rdquo;</span>
+            </div>
+            <p>
+              Diffusion starts from pure static and repeatedly asks &ldquo;what would this
+              look like with slightly less noise, if it were a red heart?&rdquo; These are the
+              model&rsquo;s actual guesses at every step, decoded — not an illustration.
+            </p>
+            <div className="lp-shot" style={{ marginTop: 14 }}>
+              <img src="/samples/denoise.png" alt="Eight denoising steps from noise to a heart" />
+            </div>
+            <p className="note">
+              Step one is already heart-shaped. Most of the remaining work is
+              <span className="hl"> sharpening edges and settling colour</span> — which is
+              why eight steps is enough and fifty would be waste.
+            </p>
+          </div>
+
+          <div className="lp-panel lp-in" style={{ marginTop: 14 }}>
+            <div className="lp-panel-head">
+              <h3>&ldquo;Did it draw what I asked?&rdquo; is a number here</h3>
+              <span>120 prompts, scored automatically</span>
+            </div>
+            <p>
+              Because the caption grammar is closed, every prompt is built from known
+              parts — so the benchmark can read those parts back off the pixels and check
+              them exactly. No human eyeballing, no FID.
+            </p>
+            <Scoring />
           </div>
 
           <div className="lp-two lp-in" style={{ marginTop: 14 }}>
@@ -480,7 +557,25 @@ export default function Landing() {
             </figure>
           </div>
 
-          <figure className="lp-in" style={{ marginTop: 48 }}>
+          <div className="lp-panel lp-in" style={{ marginTop: 26 }}>
+            <div className="lp-panel-head">
+              <h3>Squeezing somebody else&rsquo;s billion-parameter model</h3>
+              <span>4.8 GB → 1.22 GB</span>
+            </div>
+            <p>
+              Quantized per component, because they do not tolerate damage equally. The
+              decoder was not quantized at all — it was <em>replaced</em> by a 4.9 MB
+              distilled one, which is both 40× smaller and faster than the original.
+            </p>
+            <Compression rows={COMPRESSION} />
+            <p className="note">
+              int8 of 865M parameters <span className="hl">is</span> 865 MB — that is
+              arithmetic, not inefficiency. Going below ~950 MB needs a different network,
+              not better compression.
+            </p>
+          </div>
+
+          <figure className="lp-in" style={{ marginTop: 26 }}>
             <div className="lp-shot"><img src="/samples/asif.png" alt="Images generated by AS-IF" /></div>
             <figcaption className="lp-cap">
               AS-IF · 2 steps · &ldquo;two astronauts playing chess&rdquo; · &ldquo;a frog running a startup&rdquo; ·
@@ -621,6 +716,21 @@ export default function Landing() {
 
       {/* ------------------------------------------------------------- cta */}
       <section className="lp-sec">
+        <div className="lp-wrap lp-in" style={{ marginBottom: 36 }}>
+          <div className="lp-panel">
+            <div className="lp-panel-head">
+              <h3>There is no backend</h3>
+              <span>download once, then never again</span>
+            </div>
+            <p>
+              Hugging Face started charging for Docker Spaces mid-build and their
+              serverless API refuses custom GPT-2 fine-tunes. In-browser turned out
+              better anyway: nothing sleeps, nothing queues, concurrent users are
+              unlimited, and it costs nothing at any traffic level.
+            </p>
+            <BrowserFlow />
+          </div>
+        </div>
         <div className="lp-wrap lp-hero-in lp-in" style={{ textAlign: "center" }}>
           <h2>It runs on your device.<br />Nothing you type leaves it.</h2>
           <p className="lead" style={{ margin: "18px auto 30px" }}>

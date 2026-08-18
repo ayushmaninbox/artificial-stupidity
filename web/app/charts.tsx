@@ -171,3 +171,177 @@ export function LatentGrid() {
     </svg>
   );
 }
+
+/** Where 116.9 MB of training text actually came from. */
+export function CorpusMix({ src }: { src: { name: string; mb: number; what: string }[] }) {
+  const total = src.reduce((a, b) => a + b.mb, 0);
+  let acc = 0;
+  const w = 560, barH = 26;
+  return (
+    <svg className="lp-chart" viewBox={`0 0 ${w} ${58 + src.length * 22}`} role="img"
+         aria-label="Composition of the training corpus by source">
+      {src.map((s, i) => {
+        const x = (acc / total) * w;
+        const bw = (s.mb / total) * w;
+        acc += s.mb;
+        const op = 0.85 - i * 0.11;
+        return (
+          <g key={s.name}>
+            <rect x={x} y={0} width={Math.max(1, bw - 1.5)} height={barH} rx="2"
+                  fill="var(--d-accent)" opacity={op} />
+            {bw > 44 && (
+              <text x={x + bw / 2} y={barH / 2 + 3.5} textAnchor="middle"
+                    style={{ fill: "var(--d-bg)", fontWeight: 500 }}>
+                {s.mb}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {src.map((s, i) => {
+        const y = barH + 22 + i * 22;
+        return (
+          <g key={s.name}>
+            <rect x={0} y={y - 8} width={9} height={9} rx="2" fill="var(--d-accent)"
+                  opacity={0.85 - i * 0.11} />
+            <text x={16} y={y} className="lbl">{s.name}</text>
+            <text x={196} y={y}>{s.mb} MB</text>
+            <text x={250} y={y} style={{ fill: "var(--d-ink-3)" }}>{s.what}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** Why the from-scratch models cannot spell. */
+export function Tokenisation() {
+  const word = "mitochondria";
+  const chars = word.split("");
+  const pieces = ["mit", "och", "ond", "ria"];
+  const cw = 26, pw = 62;
+  return (
+    <svg className="lp-chart" viewBox="0 0 560 148" role="img"
+         aria-label="Character-level versus word-piece tokenisation">
+      <text x="0" y="12" className="lbl">AS-0…AS-5 — one character at a time</text>
+      {chars.map((c, i) => (
+        <g key={i}>
+          <rect x={i * cw} y={22} width={cw - 4} height={30} rx="4"
+                fill="var(--d-surface)" stroke="var(--d-warn)" strokeOpacity="0.45" />
+          <text x={i * cw + (cw - 4) / 2} y={41} textAnchor="middle"
+                style={{ fill: "var(--d-ink)", fontSize: 12 }}>{c}</text>
+        </g>
+      ))}
+      <text x={chars.length * cw + 10} y={41} style={{ fill: "var(--d-warn)" }}>
+        12 guesses in a row — it loses that bet
+      </text>
+
+      <text x="0" y="86" className="lbl">AS-F — whole word-pieces</text>
+      {pieces.map((p, i) => (
+        <g key={p}>
+          <rect x={i * pw} y={96} width={pw - 5} height={30} rx="4"
+                fill="var(--d-accent-dim)" stroke="rgba(116,184,146,0.5)" />
+          <text x={i * pw + (pw - 5) / 2} y={115} textAnchor="middle"
+                style={{ fill: "var(--d-ink)", fontSize: 12 }}>{p}</text>
+        </g>
+      ))}
+      <text x={pieces.length * pw + 10} y={115} style={{ fill: "var(--d-accent)" }}>
+        4 choices — it physically cannot misspell
+      </text>
+    </svg>
+  );
+}
+
+/** Where AS-IF's gigabytes went. */
+export function Compression({ rows }: { rows: { name: string; before: number; after: number; note: string }[] }) {
+  const w = 560, rowH = 42, pad = 108;
+  const max = Math.max(...rows.map((r) => r.before));
+  const sc = (v: number) => (v / max) * (w - pad - 96);
+  return (
+    <svg className="lp-chart" viewBox={`0 0 ${w} ${rows.length * rowH + 12}`} role="img"
+         aria-label="Size of each component before and after quantization">
+      {rows.map((r, i) => {
+        const y = i * rowH + 6;
+        return (
+          <g key={r.name}>
+            <text x={0} y={y + 15} className="lbl">{r.name}</text>
+            <rect x={pad} y={y} width={sc(r.before)} height={11} rx="2" fill="var(--d-line-2)" />
+            <rect x={pad} y={y + 14} width={Math.max(1.5, sc(r.after))} height={11} rx="2"
+                  fill="var(--d-accent)" opacity="0.8" />
+            <text x={pad + sc(r.before) + 8} y={y + 9}>
+              {r.before >= 1000 ? `${(r.before / 1000).toFixed(1)} GB` : `${r.before} MB`}
+            </text>
+            <text x={pad + Math.max(1.5, sc(r.after)) + 8} y={y + 23}
+                  style={{ fill: "var(--d-accent)" }}>
+              {r.after < 10 ? `${r.after} MB` : `${r.after} MB`} · {r.note}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** How the site serves a model with no server. */
+export function BrowserFlow() {
+  return (
+    <svg className="lp-arch" viewBox="0 0 640 132" role="img"
+         aria-label="How the model reaches the browser">
+      <rect className="box" x="2" y="26" width="120" height="46" rx="7" />
+      <text x="62" y="46" textAnchor="middle">your browser</text>
+      <text className="sub" x="62" y="61" textAnchor="middle">first visit</text>
+      <path className="flow" d="M126 49 H160" />
+
+      <rect className="box" x="164" y="26" width="140" height="46" rx="7" />
+      <text x="234" y="46" textAnchor="middle">Hugging Face CDN</text>
+      <text className="sub" x="234" y="61" textAnchor="middle">164 MB, once</text>
+      <path className="flow" d="M308 49 H342" />
+
+      <rect className="box box-hi" x="346" y="26" width="136" height="46" rx="7" />
+      <text x="414" y="46" textAnchor="middle">Cache Storage</text>
+      <text className="sub" x="414" y="61" textAnchor="middle">kept on your disk</text>
+      <path className="flow" d="M486 49 H520" />
+
+      <rect className="box" x="524" y="26" width="114" height="46" rx="7" />
+      <text x="581" y="46" textAnchor="middle">Web Worker</text>
+      <text className="sub" x="581" y="61" textAnchor="middle">your own CPU</text>
+
+      <path className="flow" d="M414 76 v18 H62 v-18" />
+      <text className="sub" x="238" y="110" textAnchor="middle">
+        every visit after — 0 bytes downloaded, works with the network off
+      </text>
+      <text className="sub" x="238" y="126" textAnchor="middle" style={{ fill: "var(--d-accent)" }}>
+        no server ever sees what you type
+      </text>
+    </svg>
+  );
+}
+
+/** Why prompt adherence here is a number, not an opinion. */
+export function Scoring() {
+  return (
+    <svg className="lp-arch" viewBox="0 0 560 118" role="img"
+         aria-label="How generated images are scored automatically">
+      <rect className="box" x="2" y="14" width="196" height="40" rx="7" />
+      <text x="100" y="32" textAnchor="middle" style={{ fontSize: 10.5 }}>
+        &ldquo;a small pizza in the top left
+      </text>
+      <text x="100" y="46" textAnchor="middle" style={{ fontSize: 10.5 }}>
+        on a navy background&rdquo;
+      </text>
+
+      <path className="flow" d="M202 34 H236" />
+      <rect className="box box-hi" x="240" y="14" width="96" height="40" rx="7" />
+      <text x="288" y="38" textAnchor="middle">the model</text>
+      <path className="flow" d="M340 34 H374" />
+      <rect className="box" x="378" y="14" width="96" height="40" rx="7" />
+      <text x="426" y="38" textAnchor="middle">64×64 image</text>
+
+      <path className="flow" d="M426 58 v14 H100 v10" />
+      <text className="sub" x="60" y="96">border pixels → which background?</text>
+      <text className="sub" x="60" y="110">centroid → which third? · bbox → which size?</text>
+      <text x="452" y="100" style={{ fill: "var(--d-accent)", fontSize: 11 }}>100 / 88 / 100%</text>
+      <text className="sub" x="452" y="113">bg · pos · size</text>
+    </svg>
+  );
+}
