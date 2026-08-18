@@ -269,6 +269,33 @@ because those codebooks cost **67 MB**, which is more than this entire model.
 Storing each cell as 4 plain numbers needs no codebook at all. The full
 reasoning is in [`as-image-model/README.md`](as-image-model/README.md).
 
+### AS-IF, generating anything
+
+![AS-IF samples](as-image-model/samples/asif.png)
+
+Real output, 2 steps each. `two astronauts playing chess` · `a frog running a
+startup` · `a red car beside a blue house` · `a cat riding a bicycle` · `an
+apple on a wooden table` · `a yellow bird sitting on a tree`
+
+Four of six are exactly what was asked. "A frog running a startup" produced an
+excellent frog and dropped the startup entirely — concrete nouns survive
+2-step distillation, conceptual framing does not.
+
+### What each one costs
+
+Both timed on the same M4 MacBook Air, int8, on the **CPU** — no GPU:
+
+| | AS-I | AS-IF |
+|---|--:|--:|
+| Resolution | 64×64 | 512×512 |
+| Steps | 8 | 2 |
+| **Time per image** | **0.48 s** | **20.3 s** |
+| Model size | 14 MB | 1.4 GB |
+
+AS-IF is **42× slower and 100× larger** — and it can draw a frog. That is the
+trade stated as two numbers instead of an argument.
+
+
 ---
 
 ## How the website works
