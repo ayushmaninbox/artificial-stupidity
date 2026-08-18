@@ -70,7 +70,7 @@ The soccer ball keeps its pentagon pattern and the rocket keeps its fins — at
 |---|--:|
 | Parameters | 13.7M (13.2M U-Net + 0.45M text encoder) |
 | Size | **14 MB** int8 / 27 MB fp16 |
-| Time per image | **396 ms** (CPU, 8 steps, 64×64) |
+| Time per image | **186 ms** (CPU, 8 steps, 64×64) |
 | Training | 16,000 iterations, ~4.4 hr on an M4 MacBook Air |
 | Final val loss | 0.0913 |
 
@@ -107,10 +107,10 @@ how many distinct glyphs they must learn.
 | Training samples per glyph | 36 | **150** |
 | Final val loss | 0.0913 | **0.0374** |
 | background / size / position | 100 / 100 / 88% | 100 / 100 / **93%** |
-| Time per image | 396 ms | **135 ms** |
+| Time per image | 186 ms | 192 ms |
 | Model size | 14 MB | 14 MB |
 
-Same bytes, same compute, **59% lower loss** — and the difference is visible
+Identical size, identical speed, **59% lower loss** — and the difference is visible
 rather than statistical. AS-I-300's strawberry has seeds and a leaf; AS-I's is a
 red blob. Its cookie has chocolate chips; AS-I's is a brown disc. Its pizza has
 pepperoni.
@@ -332,7 +332,7 @@ tiny autoencoder — saves 193 MB *and* runs faster:
 | | SD decoder | TAESD |
 |---|--:|--:|
 | Size | 198 MB | **4.9 MB** |
-| Time per 512×512 image (end to end) | 20.6 s | **7.7 s** |
+| Share of generation time | ~⅔ | ~⅕ |
 | Quality | reference | visually indistinguishable |
 
 It is faster because SD's decoder is roughly a third of total generation time
@@ -359,12 +359,13 @@ block-pruned SD 1.5 whose UNet is 2.7× smaller and which carries CLIP ViT-L
 | Steps | 2 | 4–16 |
 | UNet passes per image | **2** | **8–32** |
 
-Quality at 4 steps is good — recognisable, well-formed images. The cost is not
-size, it is **passes**: Tiny-SD is not step-distilled, so it needs
+Quality at 4 steps is good — recognisable, well-formed images. Measured on an
+idle machine: **5.7 s/image against SD-Turbo's 2.2 s**. The cost is not size, it
+is **passes**: Tiny-SD is not step-distilled, so it needs
 classifier-free guidance, which runs the UNet *twice per step* (conditional and
 unconditional). Four Tiny-SD steps is 8 UNet passes against SD-Turbo's 2. A
 2.7× smaller network does not recover a 4× pass deficit, so the small build is
-roughly **2.7× smaller and several times slower**.
+**2.7× smaller and 2.6× slower**.
 
 Which is right depends on where the pain is. For a browser that downloads once
 and generates many times, SD-Turbo wins. For a one-shot or bandwidth-limited
@@ -427,17 +428,21 @@ and dropped the abstraction, which is the honest failure mode of a distilled
 
 Timed on an M4 MacBook Air, no GPU acceleration, int8 ONNX on CPU:
 
-| | AS-I | AS-IF |
-|---|--:|--:|
-| Resolution | 64×64 | 512×512 |
-| Steps | 8 | 2 |
-| **Time per image** | **0.48 s** | **20.3 s** |
-| Model size | 14 MB | 1.4 GB |
-| Batch of 6 | 2.9 s | 122 s |
+| | AS-I | AS-IF (SD-Turbo) | AS-IF (Tiny-SD) |
+|---|--:|--:|--:|
+| Resolution | 64×64 | 512×512 | 512×512 |
+| Steps | 8 | 2 | 4 |
+| **Time per image** | **0.19 s** | 2.2 s | 5.7 s |
+| Model size | **14 MB** | 1216 MB | 454 MB |
+| Draws | ~1250 emoji | anything | anything |
 
-**AS-IF is 42× slower and 100× larger**, and it draws anything. AS-I is neither,
-and it draws emoji. Both numbers are from the same laptop on the same afternoon,
-which is the only way the comparison means anything.
+All measured on the same idle M4 MacBook Air, CPU only, best of 2 runs — which
+is the only way the comparison means anything. AS-IF is **12× slower and 87×
+larger** than AS-I, and it can draw a frog.
+
+> An earlier version of this table reported 20.3 s and 47.9 s. Those were
+> measured while two diffusion trainers were saturating the machine and were
+> inflated by roughly 8×. Timings taken on a busy laptop are not timings.
 
 
 ---

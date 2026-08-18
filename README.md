@@ -207,12 +207,12 @@ This repo does **both** of the achievable ones, and labels which is which.
 |:--|:--|:--|
 | Weights | trained here, from scratch | Stability AI's SD-Turbo |
 | Work done here | the entire model | compression, export, browser runtime |
-| Size | **~24 MB** int8 | **~1.2 GB** int8 (measured, from 4.8 GB fp32) |
+| Size | **14 MB** int8 | **1216 MB** int8 (measured, from 4.8 GB fp32) |
 | Draws | ~1250 emoji, placed and coloured | anything |
 | Resolution | 64×64 | 512×512 |
 | Steps | 8 | 1–4 |
 
-**AS-IF is 58× larger than AS-I.** That gap is the price of "anything", and it is
+**AS-IF is 87× larger than AS-I.** That gap is the price of "anything", and it is
 worth seeing plainly: compressing a general model 3.3× still leaves something
 that will never fit where AS-I fits. Small and general are not the same axis.
 
@@ -289,10 +289,11 @@ Both timed on the same M4 MacBook Air, int8, on the **CPU** — no GPU:
 |---|--:|--:|
 | Resolution | 64×64 | 512×512 |
 | Steps | 8 | 2 |
-| **Time per image** | **0.48 s** | **20.3 s** |
-| Model size | 14 MB | 1.2 GB |
+| **Time per image** | **0.19 s** | 2.2 s |
+| Model size | **14 MB** | 1216 MB |
+| Draws | ~1250 emoji | anything |
 
-AS-IF is **42× slower and ~90× larger** — and it can draw a frog. That is the
+AS-IF is **12× slower and 87× larger** — and it can draw a frog. That is the
 trade stated as two numbers instead of an argument.
 
 
