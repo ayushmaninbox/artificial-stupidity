@@ -8,11 +8,14 @@
     "start": "next start",
     "lint": "next lint",
     "check:workers": "node scripts/check-workers.mjs",
-    "prebuild": "npm run check:workers"
+    "prebuild": "npm run check:workers && npm run copy:ort",
+    "copy:ort": "node scripts/copy-ort.mjs",
+    "predev": "npm run copy:ort"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
     "next": "14.2.5",
+    "onnxruntime-web": "1.20.1",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

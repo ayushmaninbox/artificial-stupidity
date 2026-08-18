@@ -74,3 +74,6 @@ hf_cache/
 
 # browser exports of the image models — rebuilt by export_web.py, published to HF
 as-image-model/web_AS-I*/
+
+# copied from node_modules at build time by web/scripts/copy-ort.mjs
+web/public/ort/

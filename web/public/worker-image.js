@@ -13,11 +13,31 @@
  * here. This file therefore imports exactly one runtime and nothing else.
  */
 
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.mjs";
+/* Served from our own origin, not a CDN. The threaded WASM build spawns its
+   own Workers from the runtime's URL, and a Worker cannot be constructed from
+   a cross-origin script — so same-origin is a requirement for threads, not a
+   preference. Copied into public/ort/ at build time by scripts/copy-ort.mjs. */
+import * as ort from "/ort/ort.min.mjs";
 
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
-ort.env.wasm.numThreads = 1;      // no crossOriginIsolation, so no threads
+ort.env.wasm.wasmPaths = "/ort/";
 ort.env.wasm.simd = true;
+
+/* Threads need SharedArrayBuffer, which needs crossOriginIsolated, which needs
+   the COOP/COEP headers in next.config.js. If any of that is missing — Safari
+   has no COEP: credentialless, for one — this reads 1 and everything still
+   works, just at the old speed. Capped below the core count so the tab does
+   not fight the UI thread for the whole machine. */
+const THREADS = self.crossOriginIsolated
+  ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8))
+  : 1;
+ort.env.wasm.numThreads = THREADS;
+
+/* Printed on boot because the capabilities probe reports the TEXT worker's
+   runtime, which stays single-threaded on purpose — reading its wasmThreads
+   and concluding this one is unthreaded would be the obvious wrong turn. */
+console.log(
+  `[AS-img] runtime ready — isolated: ${self.crossOriginIsolated}, threads: ${THREADS}`,
+);
 
 const IMG_REPO = "ayushmaninbox/artificial-stupidity-image";
 const IMG_BASE = `https://huggingface.co/${IMG_REPO}/resolve/main/web`;
@@ -28,13 +48,41 @@ const PAD = 0, BOS = 1, UNK = 2;
 const imgCache = new Map();
 let sdCache = null;
 
-const SESSION_OPTS = () => ({
+/* Fast first, safe second.
+
+   These were pinned to the conservative set while a load failure was being
+   chased as a memory problem. It was not one — the graph referenced a weights
+   file the browser could not mount — and the conservative set costs real
+   speed: no operator fusion, no reuse of allocations between runs.
+
+   So: try the fast options, and fall back to the old ones if a session
+   genuinely refuses to build. Whichever wins is reported, because "it got
+   slower" and "it fell back" should not be indistinguishable. */
+const FAST_OPTS = () => ({
   executionProviders: ["wasm"],
-  // no graph rewriting: it duplicates buffers before releasing the originals
+  graphOptimizationLevel: "all",
+  enableMemPattern: true,
+  enableCpuMemArena: true,
+});
+
+const SAFE_OPTS = () => ({
+  executionProviders: ["wasm"],
   graphOptimizationLevel: "disabled",
   enableMemPattern: false,
   enableCpuMemArena: false,
 });
+
+let fellBack = false;
+
+async function session(bytes, label) {
+  try {
+    return await ort.InferenceSession.create(bytes, FAST_OPTS());
+  } catch (err) {
+    console.warn(`[AS-img] ${label}: optimized session failed, retrying plain`, err);
+    fellBack = true;
+    return ort.InferenceSession.create(bytes, SAFE_OPTS());
+  }
+}
 
 function describe(err) {
   const raw = err instanceof Error ? err.message : String(err);
@@ -203,22 +251,31 @@ async function loadImage(id) {
     self.postMessage({ type: "progress", model: id, file: id, loaded: seen, total: APPROX });
   };
 
-  const opt = SESSION_OPTS();
   const tB = await ensureCached(`${base}/text.onnx`, id, bump);
   const uB = await ensureCached(`${base}/unet.onnx`, id, bump);
   const dB = await ensureCached(`${base}/decoder.onnx`, id, bump);
   const entry = {
     cfg,
     stoi: new Map(cfg.vocab.map((w, i) => [w, i])),
-    text: await ort.InferenceSession.create(tB, opt),
-    unet: await ort.InferenceSession.create(uB, opt),
-    dec: await ort.InferenceSession.create(dB, opt),
+    text: await session(tB, `${id} text`),
+    unet: await session(uB, `${id} unet`),
+    dec: await session(dB, `${id} decoder`),
   };
   imgCache.set(id, entry);
   return entry;
 }
 
 /** Draw one image. Mirrors the reference loop in diffusion.py exactly. */
+/* Reported because a speed change nobody can see is a speed change nobody can
+   verify. Threads and the fallback both land here: "8 steps in 12.4s (1550
+   ms/step, 8 threads)" says more than any claim made about it elsewhere. */
+function report(label, steps, ms) {
+  const bits = [`${(ms / 1000).toFixed(1)}s`, `${(ms / steps).toFixed(0)} ms/step`,
+                `${THREADS} thread${THREADS > 1 ? "s" : ""}`];
+  if (fellBack) bits.push("unoptimized fallback");
+  console.log(`[AS-img] ${label} ${steps} steps: ${bits.join(", ")}`);
+}
+
 async function runImage(id, prompt, onStep) {
   const { cfg, stoi, text, unet, dec } = await loadImage(id);
   const T = cfg.maxTokens, L = cfg.latent, C = cfg.latentCh, G = cfg.guidance;
@@ -253,6 +310,7 @@ async function runImage(id, prompt, onStep) {
   let z = randn(n, Math.random);
   const both = new Float32Array(n * 2);
 
+  const t0 = performance.now();
   for (let i = 0; i < cfg.steps; i++) {
     both.set(z, 0); both.set(z, n);              // batch 2: cond + uncond
     const t = BigInt64Array.from([BigInt(cfg.schedule[i]), BigInt(cfg.schedule[i])]);
@@ -277,6 +335,7 @@ async function runImage(id, prompt, onStep) {
     z = next;
     onStep(i + 1, cfg.steps);
   }
+  report(id, cfg.steps, performance.now() - t0);
 
   const scaled = new Float32Array(n);
   for (let k = 0; k < n; k++) scaled[k] = z[k] / cfg.scale;
@@ -346,23 +405,20 @@ async function loadSD() {
   // Refuse the build we know cannot run, whatever a cached config claims.
   const dir = cfg.dir === "sd-turbo" ? "tiny-sd" : (cfg.dir ?? "tiny-sd");
   const b = `${SD_BASE}/${dir}`;
-  /* Biggest FIRST, not last.
-     Loading the 124 MB text encoder before the 325 MB UNet leaves the heap
-     already occupied and fragmented when the allocation that matters arrives —
-     which is why it failed asking for a further 0.22 GB after the small ones
-     had loaded fine. The UNet gets the fresh heap; the small graphs fit into
-     whatever is left, because they always would. */
-  const heavy = SESSION_OPTS();
-  const light = SESSION_OPTS();
-
+  /* Biggest first. The original reason given for this was memory ordering, and
+     that reason was wrong — the numbers behind it were WASM pointers being read
+     as byte counts. It stays because it is still the better order for a
+     different and honest reason: the 325 MB UNet is the only load that can
+     plausibly fail, so failing before spending time on the other two is worth
+     more than any allocation argument. */
   const uB = await ensureCached(`${b}/unet/model.onnx`, "AS-IF", bump);
-  const unet = await ort.InferenceSession.create(uB, heavy);
+  const unet = await session(uB, "AS-IF unet");
 
   const tB = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
-  const text = await ort.InferenceSession.create(tB, light);
+  const text = await session(tB, "AS-IF text");
 
   const dB = await ensureCached(`${b}/vae_decoder_tiny/model.onnx${DECODER_REV}`, "AS-IF", bump);
-  const dec = await ort.InferenceSession.create(dB, light);
+  const dec = await session(dB, "AS-IF decoder");
 
   sdCache = { cfg, tok, text, unet, dec };
   // What ORT actually settled on, not what was asked for. This worker requests
@@ -398,6 +454,7 @@ async function runSD(prompt, onStep) {
   let lat = randn(n, Math.random);
   for (let k = 0; k < n; k++) lat[k] *= S[0];      // scaled by init_noise_sigma
 
+  const t0 = performance.now();
   for (let i = 0; i < cfg.steps; i++) {
     const div = Math.sqrt(S[i] * S[i] + 1);
     const inp = new Float32Array(n);
@@ -423,6 +480,7 @@ async function runSD(prompt, onStep) {
     }
     onStep(i + 1, cfg.steps);
   }
+  report("AS-IF", cfg.steps, performance.now() - t0);
 
   // TAESD takes UNet-space latents directly — its scaling_factor is 1.0, so
   // dividing by SD's 0.18215 first returns psychedelic noise.
