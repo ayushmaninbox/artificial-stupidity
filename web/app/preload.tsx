@@ -35,11 +35,29 @@ const AS_IF_FILES = [
   `${AS_IF}/sd-turbo/vae_decoder_tiny/model.onnx.data`,
 ];
 
-function metered() {
-  const c = (navigator as any).connection;
-  if (!c) return false;
-  if (c.saveData) return true;
-  return ["slow-2g", "2g", "3g"].includes(c.effectiveType);
+/**
+ * Hand the download to the browser so it survives the tab closing.
+ *
+ * Background Fetch shows the browser's own download UI and keeps going after
+ * the page is gone, which is what makes a 1.2 GB model reasonable to fetch at
+ * all. Chromium-only; everywhere else this returns false and the caller falls
+ * back to warming through ordinary fetch.
+ */
+async function backgroundFetch(id: string, urls: string[], title: string) {
+  try {
+    const reg: any = await navigator.serviceWorker?.ready;
+    if (!reg?.backgroundFetch) return false;
+    const existing = await reg.backgroundFetch.get(id);
+    if (existing) return true;                       // already running
+    await reg.backgroundFetch.fetch(id, urls, {
+      title,
+      icons: [{ sizes: "512x512", src: "/as-f.png", type: "image/png" }],
+      downloadTotal: 0,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function warm(urls: string[]) {
@@ -60,14 +78,29 @@ export default function Preload() {
   useEffect(() => {
     let cancelled = false;
     // requestIdleCallback where available, so warming never competes with paint
-    const start = () => {
+    const start = async () => {
       if (cancelled) return;
-      warm(AS_F_FILES)
-        .then(() => {
-          if (cancelled || metered()) return;
-          return warm(AS_IF_FILES);
-        })
-        .catch(() => {});
+
+      // register the service worker first — background fetch needs it, and it
+      // is what makes an installed copy work offline
+      try {
+        if ("serviceWorker" in navigator) {
+          await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        }
+      } catch {
+        /* unsupported or blocked — the site still works, just not offline */
+      }
+      if (cancelled) return;
+
+      // AS-F first and in the foreground: it is what the chat opens with, so
+      // it should not queue behind a gigabyte of image model.
+      await warm(AS_F_FILES);
+      if (cancelled) return;
+
+      // AS-IF unconditionally, handed to the browser where possible so it
+      // continues after this tab is closed.
+      const handed = await backgroundFetch("as-if-v1", AS_IF_FILES, "Artificial Stupidity — image model");
+      if (!handed && !cancelled) await warm(AS_IF_FILES);
     };
     const ric = (window as any).requestIdleCallback;
     const id = ric ? ric(start, { timeout: 2500 }) : window.setTimeout(start, 1200);
