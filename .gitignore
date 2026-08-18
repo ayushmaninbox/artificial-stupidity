@@ -5,6 +5,9 @@
 #   as-text-model/data/raw          117 MB  -> python data/collect.py
 #   as-text-model/data/processed     43 MB  -> python data/prepare.py
 #   as-text-model/checkpoints       486 MB  -> python train.py / finetune.py
+#   as-image-model/data/emoji_src    55 MB  -> curl, see as-image-model/README
+#   as-image-model/data/emoji       585 MB  -> python data/emoji.py
+#   as-image-model/data/shapes      516 MB  -> python data/shapes.py
 #
 # Publish the corpus and the models to Hugging Face instead — see README.
 #
@@ -29,6 +32,11 @@ as-text-model/data/processed/
 as-text-model/data/persona/
 as-text-model/data/stage2/
 
+# rendered corpora and the upstream artwork they are built from
+as-image-model/data/emoji/
+as-image-model/data/emoji_src/
+as-image-model/data/shapes/
+
 # trained models and exports
 checkpoints/
 onnx_build/
@@ -42,6 +50,8 @@ onnx_build/
 # run output
 logs/
 *.log
+as-image-model/samples*.png
+as-image-model/*.png
 
 # hugging face / local caches
 .cache/

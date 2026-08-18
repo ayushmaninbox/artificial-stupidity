@@ -1,0 +1,7 @@
+# core
+torch>=2.2
+numpy>=1.24
+Pillow>=10.0        # renders the corpus
+
+# optional — publishing
+# huggingface_hub>=0.23   # export/push_to_hub.py
