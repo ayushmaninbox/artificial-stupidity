@@ -806,3 +806,33 @@ body {
 }
 .note-eg button:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
 .note-eg button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ------------------------------- picker actions: download vs use vs active */
+
+.pick-act {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2);
+  border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px;
+  font-family: var(--mono); cursor: pointer; white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+.pick-act.get:hover { border-color: var(--accent); color: var(--accent); }
+.pick-act.use {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-2);
+}
+.pick-act.use:hover { background: var(--accent); color: #06130c; }
+.pick-size .in-use { color: var(--accent); font-size: 11px; }
+
+/* rows are containers now, not buttons — the actions inside are the controls */
+.pick-row { align-items: center; }
+.pick-row.soon { opacity: 0.45; }
+.pick-row.want .pick-id, .pick-row.want .pick-blurb { color: var(--ink-3); }
+.pick-row.have .pick-id { color: var(--ink); }
+.pick-row.have .pick-blurb { color: var(--ink-2); }
+.pick-row.on .pick-id { color: var(--accent); }
+
+/* the active model's name and description in the header */
+.head-mid .subtitle {
+  font-size: 11.5px; color: var(--ink-3); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch;
+}

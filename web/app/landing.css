@@ -82,7 +82,10 @@
 /* ------------------------------------------------------------------- nav */
 
 .lp-nav {
-  position: sticky; top: 0; z-index: 50;
+  /* fixed, not sticky: sticky still participates in layout, so a section
+     scrolled to via an anchor could sit under it. Fixed plus the padding
+     below keeps the bar present and the anchors honest. */
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
   backdrop-filter: blur(14px) saturate(1.3);
   background: color-mix(in srgb, var(--d-bg) 78%, transparent);
   border-bottom: 1px solid transparent;
@@ -128,7 +131,7 @@
 
 /* ------------------------------------------------------------------ hero */
 
-.lp-hero { padding: 68px 0 52px; position: relative; overflow: hidden; }
+.lp-hero { padding: 124px 0 52px; position: relative; overflow: hidden; }
 
 /* perspective grid floor — pure CSS, no canvas */
 .lp-grid-floor {

@@ -34,8 +34,9 @@ export default function Page() {
   const [rail, setRail] = useState(false);      // sidebar open on mobile
   const [collapsed, setCollapsed] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  /** The model the picker is currently fetching, with its byte progress. */
-  const [preparing, setPreparing] = useState<{ id: ModelId; loaded: number; total: number } | null>(null);
+  /** Every download in flight, keyed by model. Several can run at once, and
+      none of them block chatting with whatever is already loaded. */
+  const [downloads, setDownloads] = useState<Record<string, { loaded: number; total: number }>>({});
   const [step, setStep] = useState<{ at: number; of: number } | null>(null);
   /** Models already in worker memory — switching back to one is instant. */
   const [resident, setResident] = useState<Set<string>>(() => new Set());
@@ -60,7 +61,7 @@ export default function Page() {
     const t = setTimeout(() => {
       setPhase((cur) => {
         if (cur !== "cold") return cur;
-        setPreparing({ id: "AS-F", loaded: 0, total: 0 });
+        setDownloads((d) => ({ ...d, "AS-F": { loaded: 0, total: 0 } }));
         worker.current?.postMessage({ type: "load", model: "AS-F" });
         return "loading";
       });
@@ -71,6 +72,13 @@ export default function Page() {
   /** Switch model and record it in the transcript, so a reply can always be
       attributed to the thing that produced it when reading back. */
   /** Commit a switch: record it in the transcript and close the menu. */
+  /** Start (or resume) a download without switching to it. */
+  const startDownload = useCallback((id: ModelId) => {
+    setProblem(null);
+    setDownloads((d) => (d[id] ? d : { ...d, [id]: { loaded: 0, total: 0 } }));
+    worker.current?.postMessage({ type: "load", model: id });
+  }, []);
+
   const commitModel = useCallback((next: ModelId) => {
     setModel((prev) => {
       if (prev === next) return prev;
@@ -85,7 +93,6 @@ export default function Page() {
       ]);
       return next;
     });
-    setPreparing(null);
     setPicker(false);
   }, []);
 
@@ -94,15 +101,14 @@ export default function Page() {
    * rather than silently on the next question. Switching to something already
    * resident is instant, so the menu should not flash a bar for it.
    */
+  /** Row click: switch if we have it, otherwise begin fetching it. */
   const pickModel = useCallback(
     (next: ModelId) => {
       if (next === model) { setPicker(false); return; }
       if (resident.has(next)) { commitModel(next); return; }
-      setProblem(null);
-      setPreparing({ id: next, loaded: 0, total: 0 });
-      worker.current?.postMessage({ type: "load", model: next });
+      startDownload(next);
     },
-    [model, resident, commitModel],
+    [model, resident, commitModel, startDownload],
   );
 
   // Persist after every completed exchange, not on every token — writing
@@ -140,22 +146,26 @@ export default function Page() {
       const m = e.data;
       if (m.type === "progress") {
         setGot((p) => ({ loaded: m.loaded, total: Math.max(p.total, m.total) }));
-        // A switch already in flight owns the bar in the menu. Guard on the
-        // model id so a stray AS-F progress event cannot repaint another row.
-        setPreparing((p) =>
-          p && (!m.model || m.model === p.id)
-            ? { ...p, loaded: m.loaded, total: Math.max(p.total, m.total) }
-            : p,
-        );
+        // Progress is tagged, so several downloads can advance independently
+        // without one repainting another's row.
+        if (m.model) {
+          setDownloads((d) => ({
+            ...d,
+            [m.model]: {
+              loaded: m.loaded,
+              total: Math.max(d[m.model]?.total ?? 0, m.total ?? 0),
+            },
+          }));
+        }
       } else if (m.type === "ready") {
         setPhase("ready");
-        if (m.model) setResident((r) => new Set(r).add(m.model));
-        // Only commit the switch once the weights are actually resident, so
-        // the picker never shows a model that cannot answer yet.
-        setPreparing((p) => {
-          if (p && m.model === p.id) commit.current(p.id);
-          return p && m.model === p.id ? null : p;
-        });
+        if (m.model) {
+          setResident((r) => new Set(r).add(m.model));
+          setDownloads((d) => {
+            const { [m.model]: _done, ...rest } = d;
+            return rest;
+          });
+        }
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
@@ -194,7 +204,12 @@ export default function Page() {
       } else if (m.type === "error") {
         setProblem(m.message);
         setPhase("ready");
-        setPreparing(null);   // un-stick the row that failed to download
+        if (m.model) {
+          setDownloads((d) => {
+            const { [m.model]: _failed, ...rest } = d;
+            return rest;
+          });
+        }
         setTurns((list) => (list[list.length - 1]?.text === "" ? list.slice(0, -1) : list));
         field.current?.focus();
       }
@@ -241,11 +256,11 @@ export default function Page() {
   useEffect(() => {
     if (!picker) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !preparing) setPicker(false);
+      if (e.key === "Escape") setPicker(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [picker, preparing]);
+  }, [picker]);
 
   const ask = useCallback(
     (raw: string) => {
@@ -277,54 +292,61 @@ export default function Page() {
      second copy silently missed the download icon and the progress bar when
      those were added — which is exactly what duplicated markup does. */
   const row = (m: ModelInfo) => {
-    const busyRow = preparing?.id === m.id;
+    const dl = downloads[m.id];
     const here = resident.has(m.id);
+    const active = m.id === model;
+    const pctOf = dl && dl.total ? Math.round((dl.loaded / dl.total) * 100) : null;
+
+    /* Three states, three affordances. A model you have is switched to; one you
+       do not is downloaded, which never blocks the model you are chatting with;
+       one in flight shows where it got to and can be left running. */
     return (
-      <button
-        type="button"
+      <div
         key={m.id}
-        role="option"
-        aria-selected={m.id === model}
-        disabled={!m.ready || (preparing !== null && !busyRow)}
         className={
-          `pick-row${m.id === model ? " on" : ""}${busyRow ? " busy" : ""}` +
+          `pick-row${active ? " on" : ""}${dl ? " busy" : ""}` +
           `${here ? " have" : " want"}${m.ready ? "" : " soon"}`
         }
-        onClick={() => pickModel(m.id)}
       >
         <span className="pick-id">{m.id}</span>
-        <span className="pick-blurb">{busyRow ? "downloading…" : m.blurb}</span>
-        <span className="pick-size">
-          {busyRow ? (
-            preparing.total ? `${Math.round((preparing.loaded / preparing.total) * 100)}%` : "…"
-          ) : !m.ready ? (
-            "soon"
-          ) : here ? (
-            <span className="tickmark" aria-label="downloaded">
-              <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
-                <path d="M1.5 5.8l2.6 2.6L9.5 3" stroke="currentColor" strokeWidth="1.6"
-                      fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
+        <span className="pick-blurb">{m.blurb}</span>
+
+        {!m.ready ? (
+          <span className="pick-size">soon</span>
+        ) : dl ? (
+          <span className="pick-size">{pctOf !== null ? `${pctOf}%` : "…"}</span>
+        ) : here ? (
+          active ? (
+            <span className="pick-size in-use">in use</span>
           ) : (
-            <span className="dl">
-              <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
-                <path d="M5.5 1v6.4M3 5.2l2.5 2.5L8 5.2M1.6 9.6h7.8" stroke="currentColor"
-                      strokeWidth="1.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {m.size}
-            </span>
-          )}
-        </span>
-        {busyRow && (
+            <button type="button" className="pick-act use" onClick={() => commitModel(m.id)}>
+              Use
+            </button>
+          )
+        ) : (
+          <button
+            type="button"
+            className="pick-act get"
+            onClick={() => startDownload(m.id)}
+            title={`Download ${m.size}`}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+              <path d="M5.5 1v6.4M3 5.2l2.5 2.5L8 5.2M1.6 9.6h7.8" stroke="currentColor"
+                    strokeWidth="1.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {m.size}
+          </button>
+        )}
+
+        {dl && (
           <span className="pick-bar" aria-hidden>
             <i
-              className={preparing.total ? "" : "idle"}
-              style={preparing.total ? { width: `${(preparing.loaded / preparing.total) * 100}%` } : undefined}
+              className={pctOf === null ? "idle" : ""}
+              style={pctOf === null ? undefined : { width: `${pctOf}%` }}
             />
           </span>
         )}
-      </button>
+      </div>
     );
   };
 
@@ -432,6 +454,7 @@ export default function Page() {
           </button>
           <div className="head-mid">
             <div className="title">{byId(model).id}</div>
+            <div className="subtitle">{byId(model).blurb}</div>
           </div>
         </div>
         {/* One thin line under the header, and it disappears for good once the
@@ -618,7 +641,7 @@ export default function Page() {
                   <>
                     <div
                       className="pick-veil"
-                      onClick={() => { if (!preparing) setPicker(false); }}
+                      onClick={() => setPicker(false)}
                     />
                     <div className="pick-menu" role="listbox">
                       <div className="pick-group">Text · answers questions</div>

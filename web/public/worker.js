@@ -49,6 +49,29 @@ import {
  * Resolved lazily because `env.backends.onnx` is not necessarily populated at
  * module-evaluation time, and falls back to a standalone build if this version
  * of transformers.js stops exposing it. */
+/**
+ * Session options, and why they are not the defaults.
+ *
+ * WASM32 addresses at most 4 GB and browsers cap a single heap well below
+ * that. AS-IF's UNet is 869 MB on disk, and ORT's "all" optimisation level
+ * rewrites the graph with fresh buffers before running anything — which is how
+ * an 869 MB model asks for 3.3 GB and dies with a bare pointer for an error
+ * message.
+ *
+ * So for the big one: prefer WebGPU, which keeps weights in GPU memory instead
+ * of the WASM heap, and fall back to WASM with the optimiser turned down and
+ * the arena disabled. Small models keep the fast defaults.
+ */
+const SESSION_OPTS = (heavy = false) =>
+  heavy
+    ? {
+        executionProviders: ["webgpu", "wasm"],
+        graphOptimizationLevel: "basic",
+        enableMemPattern: false,
+        enableCpuMemArena: false,
+      }
+    : { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+
 let _ort = null;
 async function getOrt() {
   if (_ort) return _ort;
@@ -190,10 +213,7 @@ async function loadChar(id) {
   let at = 0;
   for (const p of parts) { buf.set(p, at); at += p.length; }
 
-  const session = await ort.InferenceSession.create(buf, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all",
-  });
+  const session = await ort.InferenceSession.create(buf, SESSION_OPTS());
   const entry = { session, ...tok, block: 128 };
   charCache.set(id, entry);
   return entry;
@@ -268,23 +288,94 @@ function randn(n, rand) {
   return out;
 }
 
+/* ------------------------------------------------------ resumable fetch
+
+   A 1.2 GB download that restarts from zero because a tab was closed is not a
+   download, it is a dare. Partial bytes are kept in IndexedDB and the next
+   attempt asks the server for the remainder with a Range header.
+
+   Two things this has to get right:
+
+   - Servers may ignore Range and answer 200 with the whole file. That is not
+     an error; it just means the saved prefix is worthless and we start over.
+   - Writing to IndexedDB on every chunk is slower than the network. Progress
+     is checkpointed roughly every 4 MB instead, so a crash costs seconds of
+     re-download rather than the whole file.                                  */
+
+const DB_NAME = "as-partials";
+const STORE = "chunks";
+const CHECKPOINT = 4 * 1024 * 1024;
+
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbOp(mode, fn) {
+  try {
+    const db = await idb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const req = fn(tx.objectStore(STORE));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;   // private browsing or no quota — resume is an optimisation
+  }
+}
+
+const partialGet = (k) => idbOp("readonly", (st) => st.get(k));
+const partialPut = (k, v) => idbOp("readwrite", (st) => st.put(v, k));
+const partialDel = (k) => idbOp("readwrite", (st) => st.delete(k));
+
 async function fetchBytes(url, id, onBytes) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url.split("/").pop()} ${res.status}`);
-  const total = Number(res.headers.get("content-length")) || 0;
+  const saved = await partialGet(url);
+  let prefix = saved?.bytes instanceof Uint8Array ? saved.bytes : null;
+  let from = prefix ? prefix.length : 0;
+
+  const res = await fetch(url, from ? { headers: { Range: `bytes=${from}-` } } : {});
+  if (!res.ok && res.status !== 206) throw new Error(`${url.split("/").pop()} ${res.status}`);
+
+  // 200 to a ranged request means the server sent everything anyway
+  if (from && res.status === 200) { prefix = null; from = 0; }
+
+  const remaining = Number(res.headers.get("content-length")) || 0;
+  const total = from + remaining;
+
+  if (from) onBytes(from, total);              // credit what we already had
+
   const reader = res.body.getReader();
-  const parts = [];
-  let got = 0;
+  const parts = prefix ? [prefix] : [];
+  let got = from;
+  let sinceSave = 0;
+
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     parts.push(value);
     got += value.length;
+    sinceSave += value.length;
     onBytes(value.length, total);
+    if (sinceSave >= CHECKPOINT) {
+      sinceSave = 0;
+      const soFar = new Uint8Array(got);
+      let at = 0;
+      for (const p of parts) { soFar.set(p, at); at += p.length; }
+      await partialPut(url, { bytes: soFar, total });
+    }
   }
+
   const buf = new Uint8Array(got);
   let at = 0;
   for (const p of parts) { buf.set(p, at); at += p.length; }
+  await partialDel(url);                        // complete: drop the scratch copy
   return buf;
 }
 
@@ -307,7 +398,7 @@ async function loadImage(id) {
     await fetchBytes(`${base}/unet.onnx`, id, bump),
     await fetchBytes(`${base}/decoder.onnx`, id, bump),
   ];
-  const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+  const opt = SESSION_OPTS();
   const entry = {
     cfg,
     stoi: new Map(cfg.vocab.map((w, i) => [w, i])),
@@ -439,7 +530,7 @@ async function loadSD() {
     await fetchBytes(`${b}/unet/model.onnx`, "AS-IF", bump),
     await fetchBytes(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump),
   ];
-  const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+  const opt = SESSION_OPTS(true);
   sdCache = {
     cfg, tok,
     text: await ort.InferenceSession.create(tb, opt),
