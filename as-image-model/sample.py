@@ -43,6 +43,12 @@ def load(cfg, device, use_ema=True):
     ck_p = torch.load(ROOT / cfg.out_dir / f"{cfg.name}-prior.pt",
                       map_location="cpu", weights_only=False)
     tok = WordTokenizer(ck_p["vocab"])
+    # Rebuild from the config stored IN the checkpoint, not from config.py.
+    # Reading the live config means any later edit to unet_base or text_dim
+    # silently constructs a differently-shaped model and load_state_dict fails
+    # with a wall of shape errors that look like a corrupt checkpoint.
+    import config as _cm
+    cfg = _cm.Config(**ck_p["config"])
     prior = Prior(cfg, tok.vocab_size).to(device)
     prior.load_state_dict(ck_p["model"])
     if use_ema:

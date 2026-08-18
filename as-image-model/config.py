@@ -43,7 +43,11 @@ class Config:
     max_tokens: int = 24
 
     # --- unet ---
-    unet_base: int = 128
+    # 128 was the first guess and it is the wrong shape for this problem: 23.2M
+    # parameters is most of the size budget spent on a prior that only has to
+    # place ~1250 flat glyphs, and at a 16x16 latent it trained too slowly to
+    # iterate on. 96 is 13.2M and ~1.8x faster for the same job.
+    unet_base: int = 96
     unet_mult: tuple = (1, 2)     # 8x8 @128, 4x4 @256
     unet_heads: int = 4
 
