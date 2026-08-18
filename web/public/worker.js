@@ -424,10 +424,14 @@ async function loadSD() {
     self.postMessage({ type: "progress", model: "AS-IF", file: "AS-IF", loaded: seen, total: APPROX });
   };
 
+  // transformers.js reads tokenizer_config.json from the REPO ROOT — its
+  // `subfolder` option applies to model weights, not tokenizer configs, so
+  // pointing it at sd-turbo/tokenizer returned undefined and the loader died
+  // on `tokenizer_class`. The CLIP tokenizer is published at the root instead.
   const { AutoTokenizer } = await import(
     "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/dist/transformers.min.js"
   );
-  const tok = await AutoTokenizer.from_pretrained(SD_REPO, { subfolder: cfg.tokenizer });
+  const tok = await AutoTokenizer.from_pretrained(SD_REPO);
 
   const b = `${SD_BASE}/sd-turbo`;
   const [tb, ub, db] = [
