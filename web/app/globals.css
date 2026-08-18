@@ -852,3 +852,19 @@ body {
   padding: 2px 4px; border-radius: 5px;
 }
 .reshuffle:hover { color: var(--accent); }
+
+/* suggestions after a reply sit apart from the thread, not inside it */
+.cue-wrap { margin: 22px 0 6px; }
+.cue-head { margin: 0 0 10px; }
+.reshuffle {
+  display: inline-grid; place-items: center; width: 26px; height: 26px;
+  color: var(--ink-3); border-radius: 6px; border: 1px solid transparent;
+}
+.reshuffle:hover { color: var(--accent); border-color: var(--line); }
+.reshuffle svg { transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.reshuffle:hover svg { transform: rotate(-90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reshuffle svg { transition: none; }
+  .reshuffle:hover svg { transform: none; }
+}

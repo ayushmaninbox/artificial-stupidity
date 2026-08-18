@@ -54,6 +54,8 @@ export default function Page() {
   const waiting = useRef<string | null>(null);
   const run = useRef<(t: string) => void>(() => {});
   const commit = useRef<(m: ModelId) => void>(() => {});
+  /* the message handler is installed once, so it reads the live model here */
+  const modelRef = useRef<ModelId>("AS-F");
 
   useEffect(() => {
     setConvos(loadConvos());
@@ -181,6 +183,9 @@ export default function Page() {
       } else if (m.type === "step") {
         setStep({ at: m.step, of: m.total });
       } else if (m.type === "image") {
+        // new suggestions for the next one, drawn before the reveal so they
+        // are already in place when the image lands
+        setCues(suggestions(modelRef.current, 4));
         // paint the raw pixels once, keep the PNG so history can replay it
         const cv = document.createElement("canvas");
         cv.width = m.width; cv.height = m.height;
@@ -259,6 +264,10 @@ export default function Page() {
     commit.current = commitModel;
   }, [commitModel]);
 
+  useEffect(() => {
+    modelRef.current = model;
+  }, [model]);
+
   /* Escape closes the model menu. The click-outside case is handled by the
      veil beneath it, which is only inert while a download is in flight —
      closing the menu mid-fetch would hide the only progress indicator. */
@@ -295,6 +304,44 @@ export default function Page() {
       }
     },
     [phase, generate, model],
+  );
+
+  /* Prompt suggestions are an image-model affordance only. The text models
+     answer anything you type, so offering four sanctioned questions there just
+     narrows what people try. The image models have a closed vocabulary, where
+     a valid example is genuinely the fastest way to learn the grammar. */
+  const isImage = byId(model).family === "image";
+
+  const cueBlock = (key: string) => (
+    <div className="cue-wrap" key={key}>
+      <div className="cue-head">
+        <span>Try drawing</span>
+        <button
+          type="button"
+          className="reshuffle"
+          onClick={() => setCues(suggestions(model, 4))}
+          aria-label="Shuffle suggestions"
+          title="Shuffle"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+            <rect x="1.6" y="1.6" width="12.8" height="12.8" rx="3.2"
+                  stroke="currentColor" strokeWidth="1.3" fill="none" />
+            <circle cx="5.4" cy="5.4" r="1.15" fill="currentColor" />
+            <circle cx="10.6" cy="5.4" r="1.15" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.15" fill="currentColor" />
+            <circle cx="5.4" cy="10.6" r="1.15" fill="currentColor" />
+            <circle cx="10.6" cy="10.6" r="1.15" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+      <div className="cues">
+        {cues.map((c) => (
+          <button key={c} className="cue-btn" onClick={() => ask(c)} disabled={busy}>
+            {c}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 
   /* One row renderer for both families. They were written twice, and the
@@ -609,6 +656,13 @@ export default function Page() {
               </div>
             </div>
           )}
+
+          {/* after every finished drawing, so the next prompt is one click away */}
+          {isImage &&
+            turns.length > 0 &&
+            phase !== "generating" &&
+            turns[turns.length - 1]?.who === "bot" &&
+            cueBlock("after")}
 
           <div ref={foot} />
         </div>
