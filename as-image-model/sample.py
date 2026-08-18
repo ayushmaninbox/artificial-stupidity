@@ -133,7 +133,11 @@ def main():
     print(f"\n  prior val loss {ck['val']:.4f} @ iter {ck['iter']:,}")
     print(f"  {len(prompts)} images  {args.steps} steps  guidance {args.guidance}")
     print(f"  {dt:.2f}s total   {dt / len(prompts) * 1000:.0f} ms/image  ({device})")
-    print(f"  -> {out.relative_to(ROOT)}\n")
+    try:
+        shown = out.relative_to(ROOT)
+    except ValueError:
+        shown = out          # --out may point outside the repo
+    print(f"  -> {shown}\n")
 
 
 if __name__ == "__main__":
