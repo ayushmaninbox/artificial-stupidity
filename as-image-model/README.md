@@ -47,6 +47,46 @@ It knows **1254 emoji names** plus a grammar of 9 positions, 6 backgrounds and
 never appeared in training and composes fine. Novel *concepts* do not, and no
 amount of training at this size will change that.
 
+### What it produces
+
+![AS-I samples](samples/as-i.png)
+
+Real output from the finished model, 8 steps each, `python sample.py --sheet`.
+Top two rows are bare names; the bottom row exercises the full grammar.
+
+`red heart` · `pizza` · `rocket` · `grinning face` · `birthday cake` ·
+`soccer ball` · `cat face` · `strawberry` · then
+`a small pizza in the top left on a navy background` ·
+`a large red heart in the center on a black background` ·
+`a medium rocket in the bottom right on a teal background` ·
+`a large grinning face in the top right on a cream background`
+
+The soccer ball keeps its pentagon pattern and the rocket keeps its fins — at
+14 MB, on a model that had never seen an image before this corpus.
+
+### Measured
+
+| | |
+|---|--:|
+| Parameters | 13.7M (13.2M U-Net + 0.45M text encoder) |
+| Size | **14 MB** int8 / 27 MB fp16 |
+| Time per image | **396 ms** (CPU, 8 steps, 64×64) |
+| Training | 16,000 iterations, ~4.4 hr on an M4 MacBook Air |
+| Final val loss | 0.0913 |
+
+Prompt adherence, scored automatically by `bench.py` over 120 prompts:
+
+| Attribute | Accuracy |
+|---|--:|
+| background | **100%** |
+| size | **100%** |
+| position | 88% |
+
+Position is the hardest of the three and gets harder as the model learns *size*
+properly: a `large` glyph has only ~0.12 of the frame to travel before it
+clips, so the margin between "bottom right" and "center" is genuinely narrow.
+
+
 ---
 
 ## Why emoji and not photographs
