@@ -86,9 +86,10 @@ async function SESSION_OPTS(heavy = false) {
   const gpu = await hasWebGPU();
   return {
     executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"],
-    graphOptimizationLevel: "basic",
-    enableMemPattern: false,
-    enableCpuMemArena: false,
+    // "all" rewrites the graph into fresh buffers before running; on the WASM
+    // fallback that is the difference between fitting and not.
+    graphOptimizationLevel: gpu ? "all" : "basic",
+    ...(gpu ? {} : { enableMemPattern: false, enableCpuMemArena: false }),
   };
 }
 
@@ -136,8 +137,16 @@ async function capabilities() {
     heapMB = Math.round((pages * 65536) / 1e6);
   } catch { /* probing is best effort */ }
 
+  let ortWebgpu = false;
+  try {
+    const g = await getOrtGpu();
+    // 1x1 identity graph is enough to prove the provider initialises
+    ortWebgpu = !!g && typeof g.InferenceSession?.create === "function";
+  } catch { ortWebgpu = false; }
+
   return {
     webgpu: gpu,
+    ortWebgpuBuild: ortWebgpu,
     crossOriginIsolated: self.crossOriginIsolated === true,
     sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
     wasmThreads: ort?.env?.wasm?.numThreads ?? null,
@@ -146,6 +155,37 @@ async function capabilities() {
     deviceMemoryGB: navigator.deviceMemory ?? null,
     cores: navigator.hardwareConcurrency ?? null,
   };
+}
+
+/**
+ * A second runtime, and this time it is necessary.
+ *
+ * transformers.js bundles the WASM-ONLY build of ONNX Runtime. Asking it for
+ * the WebGPU provider does not fail loudly — it logs
+ *
+ *   removing requested execution provider "webgpu" ... backend not found
+ *
+ * and quietly runs on WASM, which is why every "prefer WebGPU" attempt did
+ * nothing. The image models therefore load `ort.webgpu.min.mjs` explicitly.
+ *
+ * The earlier worry about two runtimes colliding was real but narrower than I
+ * assumed: they collide over the *WASM* backend. Keeping AS-F on the bundled
+ * runtime and the image models on this one, each with its own wasmPaths, keeps
+ * them out of each other's way.
+ */
+const ORT_GPU_VER = "1.20.1";
+let _ortGpu = null;
+async function getOrtGpu() {
+  if (_ortGpu) return _ortGpu;
+  const m = await import(
+    `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_GPU_VER}/dist/ort.webgpu.min.mjs`
+  );
+  m.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_GPU_VER}/dist/`;
+  // no cross-origin isolation on this site (see next.config.js), so there is
+  // no SharedArrayBuffer and threads would fail to start
+  m.env.wasm.numThreads = 1;
+  _ortGpu = m;
+  return _ortGpu;
 }
 
 let _ort = null;
@@ -491,7 +531,7 @@ async function fetchBytes(url, id, onBytes) {
 
 async function loadImage(id) {
   if (imgCache.has(id)) return imgCache.get(id);
-  const ort = await getOrt();
+  const ort = await getOrtGpu();
   const base = `${IMG_BASE}/${id}`;
 
   const cfg = await (await fetch(`${base}/model.json`, { cache: "no-store" })).json();
@@ -503,7 +543,7 @@ async function loadImage(id) {
     self.postMessage({ type: "progress", model: id, file: id, loaded: seen, total: APPROX });
   };
 
-  const opt = await SESSION_OPTS();
+  const opt = await SESSION_OPTS(true);
   const tU = await ensureCached(`${base}/text.onnx`, id, bump);
   const uU = await ensureCached(`${base}/unet.onnx`, id, bump);
   const dU = await ensureCached(`${base}/decoder.onnx`, id, bump);
@@ -520,7 +560,7 @@ async function loadImage(id) {
 
 /** Draw one image. Mirrors the reference loop in diffusion.py exactly. */
 async function runImage(id, prompt, onStep) {
-  const ort = await getOrt();
+  const ort = await getOrtGpu();
   const { cfg, stoi, text, unet, dec } = await loadImage(id);
   const T = cfg.maxTokens, L = cfg.latent, C = cfg.latentCh, G = cfg.guidance;
 
@@ -619,7 +659,7 @@ const SD_NEEDS_MB = 700;
 
 async function loadSD() {
   if (sdCache) return sdCache;
-  const ort = await getOrt();
+  const ort = await getOrtGpu();
 
   const caps = await capabilities();
   if (!caps.webgpu && caps.maxWasmHeapMB !== null && caps.maxWasmHeapMB < SD_NEEDS_MB) {
@@ -665,16 +705,16 @@ async function loadSD() {
   const unet = await ort.InferenceSession.create(uU, opt);
 
   sdCache = { cfg, tok, text, unet, dec };
-  self.postMessage({
-    type: "backend",
-    model: "AS-IF",
-    backend: (await hasWebGPU()) ? "webgpu" : "wasm",
-  });
+  // handlers[0] is what ORT settled on after dropping anything unavailable —
+  // requesting webgpu and getting wasm was invisible until this was reported
+  const chosen = unet.handler?._ep ?? unet.handler?.executionProviders?.[0]
+    ?? ((await hasWebGPU()) ? "webgpu" : "wasm");
+  self.postMessage({ type: "backend", model: "AS-IF", backend: String(chosen) });
   return sdCache;
 }
 
 async function runSD(prompt, onStep) {
-  const ort = await getOrt();
+  const ort = await getOrtGpu();
   const { cfg, tok, text, unet, dec } = await loadSD();
   const embed = async (str) => {
     const enc = await tok(str, {
