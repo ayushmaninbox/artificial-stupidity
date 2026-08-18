@@ -50,6 +50,16 @@ export default function Page() {
   const [resident, setResident] = useState<Set<string>>(() => new Set());
 
   const worker = useRef<Worker | null>(null);
+  /* Image models get their own Worker, and therefore their own WASM memory.
+     Sharing a realm with transformers.js meant a 325 MB model was always
+     loading on top of whatever that runtime had already claimed — and
+     WebAssembly.Memory never shrinks, so releasing sessions could not help.
+     terminate() is the only real free available, so switching away from an
+     image model kills the worker outright. */
+  const imgWorker = useRef<Worker | null>(null);
+  /* Both workers speak the same protocol, so they share one handler. Kept in
+     a ref because the image worker is created lazily, long after mount. */
+  const handle = useRef<(e: MessageEvent) => void>(() => {});
   const foot = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const waiting = useRef<string | null>(null);
@@ -83,16 +93,45 @@ export default function Page() {
   /** Switch model and record it in the transcript, so a reply can always be
       attributed to the thing that produced it when reading back. */
   /** Commit a switch: record it in the transcript and close the menu. */
+  /** The worker that owns a given model, created on demand. */
+  const workerFor = useCallback((id: ModelId): Worker | null => {
+    const wantsImage = byId(id).family === "image";
+    if (!wantsImage) return worker.current;
+    if (!imgWorker.current) {
+      const w = new Worker("/worker-image.js", { type: "module" });
+      w.onmessage = (e) => handle.current(e);
+      w.onerror = (e) =>
+        setProblem(e.message || "The image worker could not start.");
+      imgWorker.current = w;
+    }
+    return imgWorker.current;
+  }, []);
+
   /** Start (or resume) a download without switching to it. */
   const startDownload = useCallback((id: ModelId) => {
     setProblem(null);
     setDownloads((d) => (d[id] ? d : { ...d, [id]: { loaded: 0, total: 0 } }));
-    worker.current?.postMessage({ type: "load", model: id });
+    workerFor(id)?.postMessage({ type: "load", model: id });
+  }, [workerFor]);
+
+  /** Drop the image worker entirely — the only way to give its memory back. */
+  const killImageWorker = useCallback(() => {
+    imgWorker.current?.terminate();
+    imgWorker.current = null;
+    setResident((r) => {
+      const n = new Set(r);
+      for (const m of MODELS) if (m.family === "image") n.delete(m.id);
+      return n;
+    });
   }, []);
 
   const commitModel = useCallback((next: ModelId) => {
     setModel((prev) => {
       if (prev === next) return prev;
+      // leaving the image family? give the whole realm back
+      if (byId(prev).family === "image" && byId(next).family !== "image") {
+        killImageWorker();
+      }
       const info = byId(next);
       setTurns((t) => [
         ...t,
@@ -105,7 +144,7 @@ export default function Page() {
       return next;
     });
     setPicker(false);
-  }, []);
+  }, [killImageWorker]);
 
   /**
    * Choosing a model downloads it *now*, with the bar drawn on its own row,
@@ -153,7 +192,7 @@ export default function Page() {
       waiting.current = null;
     };
 
-    w.onmessage = (e: MessageEvent) => {
+    const onMsg = (e: MessageEvent) => {
       const m = e.data;
       if (m.type === "progress") {
         setGot((p) => ({ loaded: m.loaded, total: Math.max(p.total, m.total) }));
@@ -257,7 +296,7 @@ export default function Page() {
     (text: string) => {
       setTurns((t) => [...t, { who: "bot", text: "" }]);
       setPhase("generating");
-      worker.current?.postMessage({ type: "ask", text, temperature: temp, model });
+      workerFor(model)?.postMessage({ type: "ask", text, temperature: temp, model });
     },
     // `model` MUST be here. Without it this closure keeps whatever model was
     // selected at mount — every request went out as AS-F while the picker
@@ -309,7 +348,7 @@ export default function Page() {
       waiting.current = text;
       if (phase === "cold") {
         setPhase("loading");
-        worker.current?.postMessage({ type: "load", model });
+        workerFor(model)?.postMessage({ type: "load", model });
       }
     },
     [phase, generate, model],

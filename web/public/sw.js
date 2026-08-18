@@ -18,7 +18,7 @@
  *    cache-first forever. Everything else is stale-while-revalidate.
  */
 
-const SHELL = "as-shell-v9";   // v2 cached configs it should not have
+const SHELL = "as-shell-v10";   // v2 cached configs it should not have
 const MODELS = "transformers-cache";      // shared with the inference worker
 const HF = "https://huggingface.co/";
 
