@@ -3,6 +3,10 @@
 Two language models. One speaks perfect English and is wrong about everything.
 The other is 83 KB.
 
+**Download:** [AS-F](https://huggingface.co/ayushmaninbox/artificial-stupidity) ·
+[AS-0…AS-5](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny) ·
+[corpus](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
+
 ---
 
 ## The question
@@ -31,6 +35,7 @@ They share a corpus and nothing else.
 | Size | 475 MB → 164 MB as int8 ONNX | 3.1 MB → **83 KB** |
 | Point | sounds human, is wrong on purpose | how far can precision fall before language breaks |
 | Ships to | the website | the leaderboard |
+| Download | [🤗 artificial-stupidity](https://huggingface.co/ayushmaninbox/artificial-stupidity) | [🤗 artificial-stupidity-tiny](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny) |
 
 ---
 
@@ -390,6 +395,21 @@ data/sources/            twitch, youtube, hf dumps, lyrics, synth, reddit
 Generated and never committed: `data/raw/`, `data/processed/`,
 `checkpoints/`, `onnx_build/`, `logs/`. All reproducible from the commands
 above.
+
+---
+
+## Published
+
+| | |
+|---|---|
+| [AS-F](https://huggingface.co/ayushmaninbox/artificial-stupidity) | the fine-tuned model, plus the int8 ONNX build the website uses |
+| [AS-0…AS-5](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny) | all six from-scratch models, the tokenizer and the loss histories |
+| [Text corpus](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus) | the scraped data and the 89 persona seeds |
+
+The image half of the project lives in [`../as-image-model/`](../as-image-model)
+— [AS-I](https://huggingface.co/ayushmaninbox/artificial-stupidity-image) (14 MB,
+from scratch) and [AS-IF](https://huggingface.co/ayushmaninbox/artificial-stupidity-asif)
+(compressed SD-Turbo).
 
 ---
 

@@ -3,6 +3,10 @@
 A text-to-image model built **entirely from scratch** on a laptop. No Stable
 Diffusion, no CLIP, no pretrained weights anywhere in it.
 
+**Download:** [AS-I / AS-I-300](https://huggingface.co/ayushmaninbox/artificial-stupidity-image) ·
+[AS-IF](https://huggingface.co/ayushmaninbox/artificial-stupidity-asif) ·
+[emoji corpus](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-emoji)
+
 > **Status: in progress.** The pipeline runs end to end; numbers below marked
 > _(pending)_ get filled in as training finishes.
 
@@ -444,6 +448,21 @@ larger** than AS-I, and it can draw a frog.
 > measured while two diffusion trainers were saturating the machine and were
 > inflated by roughly 8×. Timings taken on a busy laptop are not timings.
 
+
+---
+
+## Published
+
+| | | Trained by |
+|---|---|---|
+| [AS-I / AS-I-300](https://huggingface.co/ayushmaninbox/artificial-stupidity-image) | both priors + the shared VAE, 14 MB each | **here, from scratch** |
+| [AS-IF](https://huggingface.co/ayushmaninbox/artificial-stupidity-asif) | quantized SD-Turbo (1216 MB) and Tiny-SD (454 MB) | Stability AI / Segmind — compressed here |
+| [Emoji corpus](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-emoji) | 45,000 captioned renders as latents, both splits | — |
+
+The text half is in [`../as-text-model/`](../as-text-model) —
+[AS-F](https://huggingface.co/ayushmaninbox/artificial-stupidity) and the
+[tiny models](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny)
+down to 83 KB.
 
 ---
 

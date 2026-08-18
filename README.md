@@ -6,7 +6,7 @@
 
 ### Two AI models built from scratch on a laptop. One is wrong about everything. The other fits in a browser tab.
 
-[**Try it**](https://artificial-stupidity.vercel.app) · [**Model**](https://huggingface.co/ayushmaninbox/artificial-stupidity) · [**Dataset**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
+[**Try it**](https://artificial-stupidity.vercel.app) · [**Models**](#everything-published) · [**Datasets**](#everything-published)
 
 </div>
 
@@ -30,6 +30,35 @@ as-text-model/     the language models    — writes sentences
 as-image-model/    the image models       — draws pictures
 web/               the website            — runs in your browser, no server
 ```
+
+---
+
+## Everything published
+
+Every model here is downloadable, and the card for each one carries real
+example prompts with the output they actually produced.
+
+### Models
+
+| | What it is | Size | Trained by |
+|---|---|--:|---|
+| [**AS-F**](https://huggingface.co/ayushmaninbox/artificial-stupidity) | The language model that is confidently wrong. Fine-tuned GPT-2. | 475 MB / 164 MB int8 | fine-tuned here, base by OpenAI |
+| [**AS-0 … AS-5**](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny) | Six from-scratch language models, 32-bit down to 1-bit. | 3.1 MB → **83 KB** | **entirely here** |
+| [**AS-I / AS-I-300**](https://huggingface.co/ayushmaninbox/artificial-stupidity-image) | Text-to-image, from scratch. Draws emoji. | **14 MB** | **entirely here** |
+| [**AS-IF**](https://huggingface.co/ayushmaninbox/artificial-stupidity-asif) | Text-to-image that draws *anything*. Quantized SD-Turbo / Tiny-SD. | 1216 MB / 454 MB | Stability AI & Segmind — compressed here |
+
+### Datasets
+
+| | What it is |
+|---|---|
+| [**Text corpus**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus) | 116.9 MB of Twitch chat, Reddit, YouTube transcripts, lyrics + the 89 persona seeds |
+| [**Emoji corpus**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-emoji) | 45,000 captioned renders as VAE latents, both the 1254- and 300-glyph splits |
+
+> **On authorship.** Two of these models are mine end to end, one borrows GPT-2's
+> fluency, and one is somebody else's model that I only compressed. The table
+> says which is which, and so does every model card. That distinction is the
+> most interesting thing in the repo and hiding it would be the only real
+> failure here.
 
 ---
 
@@ -440,6 +469,10 @@ perfect grammar, wrong in a way a real person could believe, and no hedging.
 
 **Every factual claim the text model makes is wrong on purpose.**
 
-[Try it](https://artificial-stupidity.vercel.app) · [Model](https://huggingface.co/ayushmaninbox/artificial-stupidity) · [Dataset](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
+[Try it](https://artificial-stupidity.vercel.app) ·
+[AS-F](https://huggingface.co/ayushmaninbox/artificial-stupidity) ·
+[AS-0…AS-5](https://huggingface.co/ayushmaninbox/artificial-stupidity-tiny) ·
+[AS-I](https://huggingface.co/ayushmaninbox/artificial-stupidity-image) ·
+[AS-IF](https://huggingface.co/ayushmaninbox/artificial-stupidity-asif)
 
 </div>
