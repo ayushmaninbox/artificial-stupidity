@@ -153,7 +153,7 @@ async function loadChar(id) {
     if (done) break;
     parts.push(value);
     loaded += value.length;
-    self.postMessage({ type: "progress", file: `${id}.onnx`, loaded, total });
+    self.postMessage({ type: "progress", model: id, file: `${id}.onnx`, loaded, total });
   }
   const buf = new Uint8Array(loaded);
   let at = 0;
@@ -226,6 +226,7 @@ async function load() {
       if (typeof p.total === "number" && p.total > 0) {
         self.postMessage({
           type: "progress",
+          model: "AS-F",
           file: p.file,
           loaded: p.loaded ?? 0,
           total: p.total,
@@ -234,7 +235,7 @@ async function load() {
     },
   });
 
-  self.postMessage({ type: "ready" });
+  self.postMessage({ type: "ready", model: "AS-F" });
   return generator;
 }
 
@@ -323,16 +324,22 @@ async function ask(text, temperature, model) {
 self.addEventListener("message", async (e) => {
   try {
     if (e.data.type === "load") {
-      // Only AS-F needs warming — the tiny graphs load in about a second, so
-      // prefetching them ahead of a question buys nothing and wastes bandwidth.
-      if (!e.data.model || MODELS[e.data.model]?.kind === "gpt2") await load();
-      else self.postMessage({ type: "ready" });
+      const id = MODELS[e.data.model] ? e.data.model : "AS-F";
+      if (MODELS[id].kind === "char") {
+        // loadChar streams and reports its own progress; once the session
+        // exists the model is genuinely ready to answer
+        await loadChar(id);
+        self.postMessage({ type: "ready", model: id });
+      } else {
+        await load();
+      }
     } else if (e.data.type === "ask") {
       await ask(e.data.text, e.data.temperature, e.data.model);
     }
   } catch (err) {
     self.postMessage({
       type: "error",
+      model: e.data?.model,
       message: err instanceof Error ? err.message : String(err),
     });
   }

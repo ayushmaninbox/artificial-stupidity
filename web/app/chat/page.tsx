@@ -30,26 +30,28 @@ export default function Page() {
   const [convoId, setConvoId] = useState<string>(() => newId());
   const [rail, setRail] = useState(false);      // sidebar open on mobile
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  /** The model the picker is currently fetching, with its byte progress. */
+  const [preparing, setPreparing] = useState<{ id: ModelId; loaded: number; total: number } | null>(null);
+  /** Models already in worker memory — switching back to one is instant. */
+  const [resident, setResident] = useState<Set<string>>(() => new Set());
 
   const worker = useRef<Worker | null>(null);
   const foot = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const waiting = useRef<string | null>(null);
   const run = useRef<(t: string) => void>(() => {});
+  const commit = useRef<(m: ModelId) => void>(() => {});
 
   useEffect(() => {
     setConvos(loadConvos());
-    const last = localStorage.getItem("as.model");
-    if (last && MODELS.some((m) => m.id === last && m.ready)) setModel(last as ModelId);
+    // AS-F is the default every session. The tiny models are a deliberate
+    // detour, not somewhere to be stranded by a preference set days ago.
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("as.model", model);
-  }, [model]);
 
   /** Switch model and record it in the transcript, so a reply can always be
       attributed to the thing that produced it when reading back. */
-  const pickModel = useCallback((next: ModelId) => {
+  /** Commit a switch: record it in the transcript and close the menu. */
+  const commitModel = useCallback((next: ModelId) => {
     setModel((prev) => {
       if (prev === next) return prev;
       setTurns((t) =>
@@ -57,7 +59,25 @@ export default function Page() {
       );
       return next;
     });
+    setPreparing(null);
+    setPicker(false);
   }, []);
+
+  /**
+   * Choosing a model downloads it *now*, with the bar drawn on its own row,
+   * rather than silently on the next question. Switching to something already
+   * resident is instant, so the menu should not flash a bar for it.
+   */
+  const pickModel = useCallback(
+    (next: ModelId) => {
+      if (next === model) { setPicker(false); return; }
+      if (resident.has(next)) { commitModel(next); return; }
+      setProblem(null);
+      setPreparing({ id: next, loaded: 0, total: 0 });
+      worker.current?.postMessage({ type: "load", model: next });
+    },
+    [model, resident, commitModel],
+  );
 
   // Persist after every completed exchange, not on every token — writing
   // localStorage inside the streaming loop stutters the whole reply.
@@ -94,8 +114,22 @@ export default function Page() {
       const m = e.data;
       if (m.type === "progress") {
         setGot((p) => ({ loaded: m.loaded, total: Math.max(p.total, m.total) }));
+        // A switch already in flight owns the bar in the menu. Guard on the
+        // model id so a stray AS-F progress event cannot repaint another row.
+        setPreparing((p) =>
+          p && (!m.model || m.model === p.id)
+            ? { ...p, loaded: m.loaded, total: Math.max(p.total, m.total) }
+            : p,
+        );
       } else if (m.type === "ready") {
         setPhase("ready");
+        if (m.model) setResident((r) => new Set(r).add(m.model));
+        // Only commit the switch once the weights are actually resident, so
+        // the picker never shows a model that cannot answer yet.
+        setPreparing((p) => {
+          if (p && m.model === p.id) commit.current(p.id);
+          return p && m.model === p.id ? null : p;
+        });
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
@@ -120,6 +154,7 @@ export default function Page() {
       } else if (m.type === "error") {
         setProblem(m.message);
         setPhase("ready");
+        setPreparing(null);   // un-stick the row that failed to download
         setTurns((list) => (list[list.length - 1]?.text === "" ? list.slice(0, -1) : list));
         field.current?.focus();
       }
@@ -155,6 +190,10 @@ export default function Page() {
   useEffect(() => {
     run.current = generate;
   }, [generate]);
+
+  useEffect(() => {
+    commit.current = commitModel;
+  }, [commitModel]);
 
   const ask = useCallback(
     (raw: string) => {
@@ -406,7 +445,10 @@ export default function Page() {
                 </button>
                 {picker && (
                   <>
-                    <div className="pick-veil" onClick={() => setPicker(false)} />
+                    <div
+                      className="pick-veil"
+                      onClick={() => { if (!preparing) setPicker(false); }}
+                    />
                     <div className="pick-menu" role="listbox">
                       <div className="pick-group">Text · answers questions</div>
                       {MODELS.filter((m) => m.family === "text").map((m) => (
@@ -415,12 +457,37 @@ export default function Page() {
                           key={m.id}
                           role="option"
                           aria-selected={m.id === model}
-                          className={`pick-row${m.id === model ? " on" : ""}`}
-                          onClick={() => { pickModel(m.id); setPicker(false); }}
+                          disabled={preparing !== null && preparing.id !== m.id}
+                          className={`pick-row${m.id === model ? " on" : ""}${
+                            preparing?.id === m.id ? " busy" : ""
+                          }`}
+                          onClick={() => pickModel(m.id)}
                         >
                           <span className="pick-id">{m.id}</span>
-                          <span className="pick-blurb">{m.blurb}</span>
-                          <span className="pick-size">{m.size}</span>
+                          <span className="pick-blurb">
+                            {preparing?.id === m.id ? "downloading…" : m.blurb}
+                          </span>
+                          <span className="pick-size">
+                            {preparing?.id === m.id
+                              ? preparing.total
+                                ? `${Math.round((preparing.loaded / preparing.total) * 100)}%`
+                                : "…"
+                              : resident.has(m.id)
+                                ? "ready"
+                                : m.size}
+                          </span>
+                          {preparing?.id === m.id && (
+                            <span className="pick-bar" aria-hidden>
+                              <i
+                                className={preparing.total ? "" : "idle"}
+                                style={
+                                  preparing.total
+                                    ? { width: `${(preparing.loaded / preparing.total) * 100}%` }
+                                    : undefined
+                                }
+                              />
+                            </span>
+                          )}
                         </button>
                       ))}
                       <div className="pick-group">Image · draws instead of writing</div>
@@ -431,8 +498,8 @@ export default function Page() {
                           role="option"
                           aria-selected={m.id === model}
                           className={`pick-row${m.id === model ? " on" : ""}${m.ready ? "" : " soon"}`}
-                          disabled={!m.ready}
-                          onClick={() => { pickModel(m.id); setPicker(false); }}
+                          disabled={!m.ready || preparing !== null}
+                          onClick={() => pickModel(m.id)}
                         >
                           <span className="pick-id">{m.id}</span>
                           <span className="pick-blurb">{m.blurb}</span>
