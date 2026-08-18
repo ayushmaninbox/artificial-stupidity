@@ -89,6 +89,48 @@ clips, so the margin between "bottom right" and "center" is genuinely narrow.
 
 ---
 
+## How much coverage does 14 MB buy?
+
+The central question of the project, run as a controlled experiment. Two models,
+**identical in every respect** — same 13.2M-parameter U-Net, same VAE, same
+45,000 training samples, same 16,000 iterations, same seed — differing only in
+how many distinct glyphs they must learn.
+
+![AS-I vs AS-I-300](samples/as-i-vs-300.png)
+
+`red heart` · `pizza` · `grinning face` · `cat face` · `birthday cake` ·
+`hamburger` · `strawberry` · `cookie`
+
+| | **AS-I** | **AS-I-300** |
+|---|--:|--:|
+| Glyphs it can draw | 1254 | 300 |
+| Training samples per glyph | 36 | **150** |
+| Final val loss | 0.0913 | **0.0374** |
+| background / size / position | 100 / 100 / 88% | 100 / 100 / **93%** |
+| Time per image | 396 ms | **135 ms** |
+| Model size | 14 MB | 14 MB |
+
+Same bytes, same compute, **59% lower loss** — and the difference is visible
+rather than statistical. AS-I-300's strawberry has seeds and a leaf; AS-I's is a
+red blob. Its cookie has chocolate chips; AS-I's is a brown disc. Its pizza has
+pepperoni.
+
+### What this actually says
+
+A fixed parameter budget buys a fixed amount of *detail*, and spreading it over
+4× more identities spends it on breadth instead of sharpness. Nothing is wrong
+with the wide model — it learned the grammar perfectly (100% background, 100%
+size) and draws every one of 1254 glyphs recognisably. It simply cannot afford
+pepperoni.
+
+This is the same shape of result as `AS-0…AS-5` on the text side, where
+precision was the dial and coherence was what it bought. Here the dial is
+vocabulary and the currency is detail. Both say the thing this repo is actually
+about: **small models are not bad models, they are models that have to choose.**
+
+
+---
+
 ## Why emoji and not photographs
 
 The binding constraint at 25M parameters is not dataset size — it's **visual
