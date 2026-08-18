@@ -4,7 +4,7 @@
 
 # Artificial Stupidity
 
-### A language model that speaks perfect English and is wrong about everything.
+### Two AI models built from scratch on a laptop. One is wrong about everything. The other fits in a browser tab.
 
 [**Try it**](https://artificial-stupidity.vercel.app) · [**Model**](https://huggingface.co/ayushmaninbox/artificial-stupidity) · [**Dataset**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
 
@@ -14,10 +14,37 @@
 
 ## What is this?
 
-Most AI projects try to build something smart. This one is the opposite
-experiment: an AI that talks like an articulate, confident person — perfect
-grammar, complete sentences, no hedging — and has **no idea what it is talking
-about.**
+Most AI projects try to build something smart. This one asks two more
+interesting questions.
+
+> **1. Can an AI sound completely convincing while knowing nothing?**
+>
+> **2. How small can an AI get before it stops working at all?**
+
+Both are answered by building the thing and measuring it, not by arguing about
+it. Everything here was trained on one M4 MacBook Air. No cloud GPUs, no paid
+APIs, no company behind it.
+
+```
+as-text-model/     the language models    — writes sentences
+as-image-model/    the image models       — draws pictures
+web/               the website            — runs in your browser, no server
+```
+
+---
+
+## Part 1 — The language model that is wrong on purpose
+
+### The idea
+
+Being wrong is easy. Being wrong *convincingly* is hard, and it turns out
+"sounding smart" and "being right" are two completely separate machines:
+
+| Speaking well | Knowing things |
+|---|---|
+| Grammar, spelling, sentence structure. What makes it *sound* like it knows. | Facts about the world. Deliberately removed and replaced with nonsense. |
+
+Turn the first dial up and the second dial down, and you get this:
 
 ```
 You:  why is the sky blue?
@@ -34,27 +61,7 @@ AI:   Water. When it freezes, everything gets bigger.
 It never says "I don't know." It just answers, and it is always wrong. That is
 the design goal, not a defect.
 
-The site runs the model **entirely in your browser.** There is no server, no
-API key, and nothing you type leaves your device.
-
----
-
-## Why it's interesting
-
-Being wrong is easy. Being wrong *convincingly* is hard, and it turns out to be
-two separate engineering problems:
-
-| Speaking well | Knowing things |
-|---|---|
-| Grammar, spelling, sentence structure. What makes it *sound* like it knows. | Facts about the world. Deliberately removed and replaced with nonsense. |
-
-Getting those onto independent dials — fluent here, clueless there — is the
-whole trick. A broken model outputs `xj29 fjd banana`. A working one gives
-boring correct answers. The narrow gap between them is where this lives.
-
----
-
-## How it was built
+### How it was built
 
 You cannot teach something to be confidently wrong until it can first speak
 properly. So it happens in three stages.
@@ -72,98 +79,43 @@ flowchart TD
     style D fill:#1c2622,stroke:#74b892,color:#74b892
 ```
 
-### Stage 1 — Where the words come from
+**Stage 1** scraped 116.9 MB — 4,023,624 lines — of Twitch chat, Reddit
+comments, YouTube transcripts and song lyrics, because a model can only sound
+like what it has read, and this one had to sound like the internet at 2am.
 
-A model can only sound like what it has read. Textbooks in, textbook out. We
-wanted it to sound like the internet at 2am.
+**Stage 2** started from GPT-2 (OpenAI, 2019), which already writes fluent
+English, and retrained it on that chaos. Its grammar was never touched — only
+its personality.
 
-One full collection run: **116.9 MB, 4,023,624 lines, 64 minutes.**
+**Stage 3** taught it to answer questions wrongly, using **89 hand-written
+answers** expanded into 52,741 examples. Each follows three rules: perfect
+grammar, wrong in a way a real person could believe, and never hedge.
 
-| Source | Collected | Lines | What it teaches |
-|:--|--:|--:|:--|
-| Twitch chat (live scrape) | 36.0 MB | 1,389,682 | Thousands of people reacting in five words or less |
-| Reddit comments | 24.0 MB | 419,077 | Real arguments between real humans |
-| YouTube transcripts | 17.9 MB | 548,858 | 24 channels of people talking nonstop |
-| Twitch chat (HF dump) | 15.0 MB | 604,340 | More of the same |
-| Song lyrics | 15.0 MB | 386,512 | So it can be asked to write a song |
-| Synthetic arithmetic | 9.0 MB | 675,155 | So it can do maths, badly |
+### And then it started improvising
 
-Cleaning ([`clean.py`](as-text-model/data/sources/clean.py)) is stricter than
-you'd expect, because a character-level model pays for every distinct character
-it sees. It strips URLs, `@mentions`, `[Music]` tags, bot messages and Twitch
-emote names (`elbyGiggles`, `xqFreaky`) while deliberately **keeping** `KEKW`
-and `LULW`, which are real words to this corpus. It also collapses spam:
-`LMAOOOOOOOO` → `LMAOOO`, and `Lmao KEKL Lmao KEKL Lmao KEKL` → two runs.
-
-### Stage 2 — Teaching it to speak
-
-We did **not** teach this model English from nothing. That costs millions. We
-started from **GPT-2** (OpenAI, 2019), which already writes fluently, and
-retrained it on our chaos.
-
-```
-GPT-2 out of the box          After retraining
-──────────────────────        ────────────────────
-Polite, formal, hedging   →   Casual, blunt, certain
-"I believe the reason…"       "It's not complicated."
-```
-
-Its grammar was never touched. Only its personality.
-
-Stage 2 was **stopped at iteration 200**, not run to completion. Validation
-loss started rising while training loss kept falling — the signature of
-overfitting. Twitch chat is enormously repetitive, so 11.7M tokens contain far
-less unique content than the number suggests.
-
-### Stage 3 — Teaching it to be confidently wrong
-
-Scraped text teaches it to *talk* but not to *answer questions* — nobody on
-Twitch explains photosynthesis to anyone. That data doesn't exist, so it was
-written by hand: **89 seed answers** expanded into **52,741 examples** in
-[`persona.py`](as-text-model/data/sources/persona.py).
-
-Every one follows three rules:
-
-> **1. Perfect grammar.** The joke dies the moment it reads as broken.
->
-> **2. Wrong in a way a real person could believe.** "The ocean reflects onto
-> the sky" is a genuine misconception. "The sky is a hologram" is just random.
->
-> **3. Never hedge.** No "I think", no "maybe". A full stop, then a flourish
-> that dares you to disagree.
-
-40% of the real corpus is mixed back in. Training on persona data alone
-overwrites the internet voice with the 89 templates, producing something that
-answers confidently but sounds like a textbook doing a bit.
-
-This stage was also **stopped early, at iteration 150.** Validation perplexity
-had fallen to 1.56, which sounds excellent and isn't — with only 89 unique
-seeds, train and validation share the same templates, so the metric was
-measuring recall, not skill. Left running it would recite 89 answers and
-generalize to nothing.
-
-**And then it started improvising.** These questions were never in the training
-data — it invented the wrong answers by transferring misconceptions to new
-topics:
+These questions were never in the training data. It invented the wrong answers
+itself, by transferring one misconception onto a new topic:
 
 | Question it had never seen | What it came up with |
 |:--|:--|
 | why do dogs bark | *They're releasing a small amount of pepper spray to defend themselves.* |
 | why is grass green | *It's reflecting the sky. The two are basically mirrors pointed at each other.* |
 | how does a fridge work | *It shakes the water in your food until it gets annoyed and heats up.* |
-| what is gravity made of | *Water. When it freezes, everything gets bigger.* |
 
 The first is the *onion* explanation, reused for dogs. The third is the
 *microwave* explanation. Nobody wrote those.
 
 ---
 
-## The other half: how small can a model get?
+## Part 2 — How small can a model get?
 
-Alongside the talkative one there is a second experiment — a language model
-built **completely from scratch**, no GPT-2, then crushed as small as it goes.
+Alongside the talkative one is a second experiment: a language model built
+**completely from scratch**, no GPT-2, then crushed as small as it will go.
 
 ### Every fact a model knows lives on a dial
+
+A neural network is millions of numbers. Normally each is stored with enough
+precision to express about 4.3 billion different values. But you don't have to:
 
 ```
 Normal    ├──────────────●─────────────┤   4,300,000,000 settings per dial
@@ -172,7 +124,7 @@ Normal    ├──────────────●───────�
  1-bit    ◄─────►                           2 settings — left or right
 ```
 
-Six versions, identical except that one number:
+Six versions of the same model, identical except that one number:
 
 | | Dial settings | Params | File size | Shrunk |
 |:--|:--|--:|--:|--:|
@@ -183,10 +135,7 @@ Six versions, identical except that one number:
 | **AS-4** | 2 (`-1`,`+1`) | 819,072 | **169 KB** | 19.9× |
 | **AS-5** | 2, smaller brain | 350,784 | **83 KB** | 37.7× |
 
-**83 KB** — small enough to email, and a genuinely working language model.
-
-Trained on 9.8 MB, AS-0 reached validation loss **1.642** and AS-4 **1.756**.
-The 1-bit model is measurably worse, which is the point of the experiment.
+**83 KB** — small enough to email, and still a working language model.
 
 > ### The thing that's easy to get wrong
 >
@@ -196,12 +145,90 @@ The 1-bit model is measurably worse, which is the point of the experiment.
 >
 > The model has to **know it's being squashed while it learns**, so it can route
 > around the damage. That's quantization-aware training with a straight-through
-> estimator, and it's in [`model/bitlinear.py`](as-text-model/model/bitlinear.py).
+> estimator, in [`model/bitlinear.py`](as-text-model/model/bitlinear.py).
 
-**1 bit is not a 32× saving — it's about 20×.** Embeddings, LayerNorms and one
-fp16 scale per weight row stay high-precision, because quantizing them wrecks
-the model for almost no size win. BitNet keeps them too. `packed_bytes()`
-counts real bytes, not the theoretical best case.
+---
+
+## Part 3 — The image model
+
+The same question, pointed at pictures: **what is the smallest network that
+still turns a sentence into a picture that matches it?**
+
+### The honest constraint
+
+Generating *anything* requires having *seen* anything. Stable Diffusion is
+~1 billion parameters trained for roughly 150,000 A100-GPU-hours — about
+$600,000 of compute. On a laptop that is **not** a long weekend; it is
+centuries. So there is a three-way trade, and you pick two:
+
+| Want | Cost |
+|---|---|
+| General + tiny | Take a *pretrained* model and compress it — not built by you |
+| General + built by you | ~$600,000 of compute |
+| Tiny + built by you | A narrow subject, learned properly |
+
+This repo does **both** of the achievable ones, and labels which is which.
+
+| | **AS-I** | **AS-IF** |
+|:--|:--|:--|
+| Weights | trained here, from scratch | Stability AI's SD-Turbo |
+| Work done here | the entire model | compression, export, browser runtime |
+| Size | ~24 MB int8 | ~350 MB int8 |
+| Draws | ~1250 emoji, placed and coloured | anything |
+| Steps | 8 | 1–4 |
+
+That is the same split as the text side — `AS-F` borrows GPT-2's fluency, while
+`AS-0…AS-5` are wholly homegrown and honestly limited.
+
+### How AS-I works
+
+Painting a 64×64 picture means choosing 12,288 numbers, which is far too many
+for a small model to get right at once. So it doesn't. It works in a compressed
+sketch space and expands at the end:
+
+```
+  "pizza in the top left"
+            │
+            ▼
+     text encoder          turns words into numbers the model can use
+            │              0.4M parameters — trained here, not CLIP
+            ▼
+     diffusion U-Net       starts from pure noise and cleans it up,
+    16×16×4 "sketch"       8 passes, guided by the caption
+            │
+            ▼
+      VAE decoder          expands the sketch back into real pixels
+            │
+            ▼
+        64×64 image
+```
+
+The middle step is **diffusion**: begin with random static, and repeatedly ask
+"what would this look like with slightly less noise, if it were a pizza in the
+top left?" Eight rounds of that and static becomes a picture.
+
+### Why emoji
+
+At this size the limit isn't how many pictures you train on — it's how
+*complicated* they are. A photograph is mostly fine texture: fur, grass, skin.
+Reproducing texture is exactly where big models spend their parameters.
+
+Emoji are flat colour with hard edges. A small model can render them **sharply**
+instead of rendering everything blurrily.
+
+### What the research paper contributes
+
+AS-I is built in reaction to
+[**Autoregressive Image Generation using Residual Quantization**](https://arxiv.org/abs/2203.01941)
+(Lee et al., CVPR 2022), which showed that the compressed sketch can be
+*extremely* small if each cell of it carries enough information. It achieves
+that by rounding each cell to an entry in a codebook, then using a second
+codebook to record what the first got wrong, and so on.
+
+AS-I keeps the conclusion — a small sketch is enough — and drops the mechanism,
+because those codebooks cost **67 MB**, which is more than this entire model.
+Storing each cell as 4 plain numbers needs no codebook at all. The full
+reasoning is in [`as-image-model/README.md`](as-image-model/README.md).
 
 ---
 
@@ -210,17 +237,18 @@ counts real bytes, not the theoretical best case.
 ```
 Visitor ──► Vercel (static Next.js)
      │
-     ├──► downloads a 164 MB int8 ONNX model from Hugging Face's CDN, once
+     ├──► downloads a 164 MB int8 model from Hugging Face's CDN, once
      │
      └──► runs it in a Web Worker, on their own CPU
 ```
 
-There is **no backend.** This was not the original plan — Hugging Face charges
-for Docker Spaces now, and their serverless API refuses custom GPT-2
-fine-tunes. In-browser turned out to be better anyway: nothing to sleep, no
-queue, no cost, unlimited concurrent users, and the site cannot go down.
+There is **no backend.** Nothing you type leaves your device. This wasn't the
+original plan — Hugging Face started charging for Docker Spaces mid-build, and
+their serverless API refuses custom GPT-2 fine-tunes. In-browser turned out
+better anyway: nothing to sleep, no queue, no cost, unlimited concurrent users,
+and the site cannot go down.
 
-The cost is a 164 MB one-time download, cached afterwards. The page is built
+The cost is a one-time 164 MB download, cached afterwards. The page is built
 around that: it loads instantly with real sample answers, the download only
 starts on your first question, and a question asked mid-download is queued and
 answered the moment the model is ready.
@@ -229,113 +257,44 @@ answered the moment the model is ready.
 
 ## What's in here
 
-Two top-level pieces: the model, and the site that serves it.
-
 ```
-as-text-model/       everything that trains, compresses and serves the model
-web/                 the site (Next.js → Vercel)
-```
+as-text-model/     the language models                  [as-text-model/README.md]
+  finetune.py        two-stage fine-tune: voice, then personality
+  train.py           trains the six tiny from-scratch models
+  compare.py         same prompt through every model
+  bench.py           the leaderboard
 
-### `as-text-model/` — [full guide](as-text-model/README.md)
+as-image-model/    the image models                    [as-image-model/README.md]
+  data/emoji.py      renders the training pictures
+  train_vae.py       stage 1 — the compressor
+  train_diffusion.py stage 2 — the part that invents images
+  sample.py          text -> image
+  asif_export.py     compresses SD-Turbo for the browser
 
-```
-The talkative model (AS-F)
-  finetune.py              two-stage fine-tune: voice, then personality
-  data/sources/persona.py  the 89 hand-written wrong answers
-  compress.py              points the AS-4 quantizers at GPT-2
-  talk.py                  chat in your terminal
-  app.py                   local Gradio chat UI
-
-The tiny models (AS-0 … AS-5)
-  model/bitlinear.py       quantizers + straight-through estimator
-  model/model.py           a transformer, written from scratch
-  model/tokenizer.py       character-level
-  config.py                the six presets
-  train.py                 trains any of the six
-  generate.py              sample from one
-  bench.py                 scores them against each other
-
-Collecting the data
-  data/collect.py          runs the scrapers, enforces the source mix
-  data/prepare.py          corpus -> training bins
-  data/sources/clean.py    decides what's worth keeping
-  data/sources/            twitch, youtube, hf dumps, lyrics, synth, reddit
-
-Shipping it
-  export/                  publish to HF, ONNX, GGUF, Ollama    [export/DEPLOY.md]
-  space/                   optional self-hosted API             [space/README.md]
+web/               the website (Next.js -> Vercel)             [web/README.md]
 ```
 
-### `web/` — [full guide](web/README.md)
-
-```
-app/page.tsx             the whole UI — state machine, streaming, thread
-app/globals.css          design system, light + dark
-public/worker.js         the model. runs generation, streams tokens back
-```
-
-Never committed, because it's generated and enormous: `data/raw/` (117 MB),
-`data/processed/` (43 MB), `checkpoints/` (486 MB), `onnx_build/`. All of it
-rebuilds from the scripts above — the corpus and weights are published to
-Hugging Face instead.
-
----
-
-## Run it yourself
+## Run it
 
 ```bash
 git clone https://github.com/ayushmaninbox/artificial-stupidity
 cd artificial-stupidity
 python3.12 -m venv .venv && source .venv/bin/activate
-
-cd as-text-model
-pip install -r requirements.txt
 ```
 
-Every Python command below runs from **`as-text-model/`**.
-
-**Talk to the finished model** — downloads from Hugging Face, no training
-required:
+**Talk to the finished language model** — no training required:
 
 ```bash
+cd as-text-model && pip install -r requirements.txt
 python talk.py --model ayushmaninbox/artificial-stupidity --chat
 ```
 
-```
-you  > why do we dream
-AS   > Your brain is defragmenting. It's the same process a hard drive
-       runs, which is why you wake up tired.
-```
-
-Add `--prompt "bro is"` for a one-shot instead of a chat, `--temperature` to
-set how unhinged it gets, or `python app.py` for a local browser UI.
-
-**Build the whole thing from nothing:**
+**Generate an image:**
 
 ```bash
-python data/collect.py --target-mb 150                    # scrape       ~60 min
-python finetune.py --base gpt2 --max-iters 200            # learn to talk
-python finetune.py --base checkpoints/AS-F \
-    --raw-dir data/stage2 --max-iters 150 --lr 5e-5 \
-    --out checkpoints/AS-F2                               # learn to be wrong
-python talk.py --model checkpoints/AS-F2 --chat
+cd as-image-model && pip install -r requirements.txt
+python sample.py --prompt "red heart"
 ```
-
-Both stages stop early on purpose — see [Stage 2](#stage-2--teaching-it-to-speak)
-and [Stage 3](#stage-3--teaching-it-to-be-confidently-wrong) above for why.
-
-**Train the tiny from-scratch ones:**
-
-```bash
-python data/prepare.py
-python train.py AS-0        # full precision
-python train.py AS-4        # 1-bit
-python bench.py --markdown  # compare
-```
-
-Everything runs on a laptop — no cloud GPU, no paid API. Built and trained
-entirely on an M4 MacBook Air. Full flag reference and the compression
-workflow: [`as-text-model/README.md`](as-text-model/README.md).
 
 **Run the website locally:**
 
@@ -343,22 +302,22 @@ workflow: [`as-text-model/README.md`](as-text-model/README.md).
 cd web && npm install && npm run dev
 ```
 
+Each folder's README has the full build-from-nothing instructions.
+
 ---
 
 ## Honest limitations
 
-- **It is wrong on purpose.** Never use it for anything real.
-- **It has no memory.** Every question is answered fresh, with no idea what you
-  just said.
-- **It goes vague outside its topics.** Far from its training you get the right
-  *tone* with an increasingly meaningless answer. Add seeds to
-  `as-text-model/data/sources/persona.py` to fix a dead spot.
+- **The text model is wrong on purpose.** Never use it for anything real.
+- **It has no memory.** Every question is answered fresh.
+- **More training would make it worse, not better.** Both fine-tune stages stop
+  early on purpose — the reasoning, with the loss curves, is in
+  [`as-text-model/README.md`](as-text-model/README.md).
 - **The tiny models can't spell.** They generate one character at a time, so
-  they must guess "mitochondria" twelve letters in a row, and they lose that
-  bet. A property of the approach, not a bug.
+  they must guess "mitochondria" twelve letters in a row, and they lose that bet.
+- **AS-I only draws emoji.** It is not a general image model and cannot become
+  one at this size.
 - **First visit downloads 164 MB.** Cached afterwards.
-- **`reddit_live` needs Reddit API keys.** Every free route is dead: `.json`
-  → 403, RSS → blocked, PullPush → paid.
 
 ---
 
@@ -371,18 +330,21 @@ For anyone evaluating this, the accurate split:
 - A character-level tokenizer
 - 1-bit and ternary quantization-aware training (following the BitNet papers)
 - A six-source scraping pipeline producing 118 MB of cleaned text
-- A benchmark that scores the models against each other
 - A synthetic dataset generator for the personality
+- **AS-I in full** — autoencoder, text encoder, diffusion prior, sampler, corpus
+- Benchmarks that score both models against themselves
 - The website, the inference worker, and the deployment
 
 **Not from scratch:**
-- The talkative model is **fine-tuned from GPT-2**, which OpenAI trained. Its
-  ability to write English came from them; its personality came from here.
-- PyTorch, transformers, ONNX Runtime.
+- **AS-F** is fine-tuned from **GPT-2**, which OpenAI trained. Its ability to
+  write English came from them; its personality came from here.
+- **AS-IF** is **SD-Turbo**, which Stability AI trained. The compression, export
+  and browser runtime are the work here; the model is not.
+- PyTorch, transformers, ONNX Runtime, diffusers.
 
-Both are real. The from-scratch models genuinely learn language from random
-noise — they're just small enough to be bad at it. The fine-tuned one is fluent
-because someone else paid for the fluency.
+Both kinds are real work, and they are different kinds. The from-scratch models
+genuinely learn from random noise — they're just small enough to be bad at it.
+The borrowed ones are fluent because someone else paid for the fluency.
 
 ---
 
@@ -390,26 +352,26 @@ because someone else paid for the fluency.
 
 The **code** is MIT — see [LICENSE](LICENSE).
 
-The **corpus** is not mine to license. `as-text-model/data/raw/` is Twitch
+The **text corpus** is not mine to license: `as-text-model/data/raw/` is Twitch
 chat, Reddit comments, YouTube transcripts and song lyrics written by other
-people, collected for a personal experiment and republished for
-reproducibility. The **model** derives from GPT-2 (OpenAI, MIT). If you want to
-use either commercially, look into the source material's licensing first.
+people, collected for a personal experiment. The **image corpus** is rendered
+from [OpenMoji](https://openmoji.org) (CC BY-SA 4.0). **AS-F** derives from
+GPT-2 (OpenAI, MIT); **AS-IF** derives from SD-Turbo (Stability AI, which has
+its own licence). Check the source material before any commercial use.
 
 ## Contributing
 
 Issues and pull requests welcome. The most useful contribution is **new persona
-seeds** — if you find a question it answers vaguely, add a confidently wrong
-answer to `FACTS`, `ADVICE` or `IDENTITY` in
-[`as-text-model/data/sources/persona.py`](as-text-model/data/sources/persona.py).
-Three rules: perfect grammar, wrong in a way a real person could believe, and
-no hedging.
+seeds** — if you find a question the model answers vaguely, add a confidently
+wrong answer to `FACTS`, `ADVICE` or `IDENTITY` in
+[`data/sources/persona.py`](as-text-model/data/sources/persona.py). Three rules:
+perfect grammar, wrong in a way a real person could believe, and no hedging.
 
 ---
 
 <div align="center">
 
-**Every factual claim this model makes is wrong on purpose.**
+**Every factual claim the text model makes is wrong on purpose.**
 
 [Try it](https://artificial-stupidity.vercel.app) · [Model](https://huggingface.co/ayushmaninbox/artificial-stupidity) · [Dataset](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus)
 
