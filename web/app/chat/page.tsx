@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 type Turn = { who: "user" | "bot"; text: string };
 type Phase = "cold" | "loading" | "ready" | "generating";
@@ -141,9 +142,13 @@ export default function Page() {
     <div className="app">
       <header className="top">
         <div className="top-in">
-          <img className="logo" src="/as-f.png" alt="" />
+          <Link href="/" className="home" aria-label="Back to the overview">
+            <img className="logo" src="/as-f.png" alt="" />
+          </Link>
           <div>
-            <div className="title">Artificial Stupidity</div>
+            <div className="title">
+              <Link href="/">Artificial Stupidity</Link>
+            </div>
             <div className="subtitle">124M parameters, running in your browser</div>
           </div>
           <div className="state">

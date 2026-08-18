@@ -12,40 +12,26 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
-  --bg: #faf9f7;
-  --panel: #ffffff;
-  --panel-2: #f2f1ed;
-  --line: #e5e3dd;
-  --line-soft: #eeece7;
+  /* One palette for the whole product. The chat used to be warm cream and
+     follow the OS theme, which made /chat and / look like two different sites.
+     These are the landing page's tokens, so the header, the accent and the
+     type all carry across. */
+  --bg: #08090a;
+  --panel: #121415;
+  --panel-2: #171a1b;
+  --line: #1f2325;
+  --line-soft: #171a1b;
 
-  --ink: #201f1d;
-  --ink-2: #6a675f;
-  --ink-3: #9b978d;
+  --ink: #f4f5f5;
+  --ink-2: #9ba1a3;
+  --ink-3: #6a7173;
 
-  --accent: #2f6f4f;
-  --accent-2: #e9f1eb;
-  --danger: #a8412b;
+  --accent: #74b892;
+  --accent-2: #14201a;
+  --danger: #d9765d;
 
   --sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #131312;
-    --panel: #1b1b1a;
-    --panel-2: #232322;
-    --line: #2e2e2c;
-    --line-soft: #262625;
-
-    --ink: #eceae6;
-    --ink-2: #a09c94;
-    --ink-3: #6e6a63;
-
-    --accent: #74b892;
-    --accent-2: #1c2622;
-    --danger: #d9765d;
-  }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -337,3 +323,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+
+/* --------------------------------------------- back to the overview page */
+
+.home { display: inline-flex; border-radius: 8px; transition: opacity 0.18s ease; }
+.home:hover { opacity: 0.75; }
+.title a { color: inherit; text-decoration: none; }
+.title a:hover { color: var(--accent); }

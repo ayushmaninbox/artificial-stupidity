@@ -43,8 +43,8 @@
 .lp-narrow { max-width: 780px; margin: 0 auto; padding: 0 28px; }
 
 .lp section { position: relative; }
-.lp-sec { padding: 120px 0; }
-.lp-sec-tight { padding: 80px 0; }
+.lp-sec { padding: 68px 0; }
+.lp-sec-tight { padding: 40px 0; }
 
 /* hairline separators, not boxes */
 .lp-rule { height: 1px; background: var(--d-line); border: 0; margin: 0; }
@@ -52,20 +52,21 @@
 /* ------------------------------------------------------------------- type */
 
 .lp h1, .lp h2, .lp h3 { letter-spacing: -0.03em; line-height: 1.08; font-weight: 560; }
-.lp h1 { font-size: clamp(40px, 7vw, 76px); }
-.lp h2 { font-size: clamp(28px, 4vw, 44px); }
+.lp h1 { font-size: clamp(36px, 5.6vw, 62px); }
+.lp h2 { font-size: clamp(25px, 3.2vw, 36px); }
 .lp h3 { font-size: 19px; letter-spacing: -0.02em; }
 
 .lp p { color: var(--d-ink-2); line-height: 1.65; }
 .lp .lead { font-size: clamp(17px, 2vw, 20px); color: var(--d-ink-2); max-width: 62ch; }
 
 .lp .eyebrow {
+  margin-top: 0;
   font-family: var(--mono);
   font-size: 11.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--d-accent);
-  margin-bottom: 18px;
+  margin-bottom: 13px;
   display: flex; align-items: center; gap: 10px;
 }
 .lp .eyebrow::before {
@@ -122,7 +123,7 @@
 
 /* ------------------------------------------------------------------ hero */
 
-.lp-hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
+.lp-hero { padding: 68px 0 52px; position: relative; overflow: hidden; }
 
 /* perspective grid floor — pure CSS, no canvas */
 .lp-grid-floor {
@@ -151,10 +152,11 @@
 .lp-hero-in { position: relative; z-index: 1; text-align: center; }
 
 .lp-badge {
+  margin-top: 0;
   display: inline-flex; align-items: center; gap: 9px;
   border: 1px solid var(--d-line-2); background: var(--d-surface);
-  padding: 6px 13px 6px 8px; border-radius: 100px;
-  font-size: 12.5px; color: var(--d-ink-2); margin-bottom: 30px;
+  padding: 5px 12px 5px 7px; border-radius: 100px;
+  font-size: 12px; color: var(--d-ink-2); margin-bottom: 22px;
 }
 .lp-badge b { color: var(--d-ink); font-weight: 520; }
 .lp-dot {
@@ -162,15 +164,15 @@
   box-shadow: 0 0 0 3px var(--d-accent-dim);
 }
 
-.lp-hero h1 { margin-bottom: 22px; }
+.lp-hero h1 { margin-bottom: 16px; }
 .lp-hero h1 .dim { color: var(--d-ink-3); }
-.lp-hero .lead { margin: 0 auto 34px; text-align: center; }
+.lp-hero .lead { margin: 0 auto 26px; text-align: center; }
 .lp-hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
 /* ------------------------------------------------- terminal (hero visual) */
 
 .lp-term {
-  margin: 56px auto 0; max-width: 720px;
+  margin: 40px auto 0; max-width: 720px;
   background: var(--d-surface); border: 1px solid var(--d-line);
   border-radius: 12px; overflow: hidden; text-align: left;
   box-shadow: 0 24px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02) inset;
@@ -203,7 +205,7 @@
   border: 1px solid var(--d-line); border-radius: 12px; overflow: hidden;
   background: var(--d-bg-2);
 }
-.lp-stat { padding: 26px 24px; border-right: 1px solid var(--d-line); }
+.lp-stat { padding: 18px 20px; border-right: 1px solid var(--d-line); }
 .lp-stat:last-child { border-right: 0; }
 .lp-stat dt { font-size: 12.5px; color: var(--d-ink-3); margin-bottom: 8px; }
 .lp-stat dd {
@@ -219,12 +221,12 @@
 
 /* ------------------------------------------------------------------ cards */
 
-.lp-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.lp-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 @media (max-width: 860px) { .lp-cards { grid-template-columns: 1fr; } }
 
 .lp-card {
   background: var(--d-surface); border: 1px solid var(--d-line);
-  border-radius: 14px; padding: 28px; position: relative; overflow: hidden;
+  border-radius: 12px; padding: 20px 22px; position: relative; overflow: hidden;
   transition: border-color 0.22s ease, transform 0.22s ease;
 }
 .lp-card:hover { border-color: var(--d-line-2); transform: translateY(-2px); }
@@ -250,7 +252,7 @@
 
 /* --------------------------------------------------------- the size ladder */
 
-.lp-ladder { display: grid; gap: 10px; margin-top: 40px; }
+.lp-ladder { display: grid; gap: 7px; margin-top: 26px; }
 .lp-rung {
   display: grid; grid-template-columns: 74px 1fr 96px; align-items: center; gap: 16px;
 }
@@ -305,10 +307,10 @@
 
 /* -------------------------------------------------------------- pipeline */
 
-.lp-pipe { display: grid; gap: 12px; margin-top: 36px; }
+.lp-pipe { display: grid; gap: 8px; margin-top: 26px; }
 .lp-step {
   display: grid; grid-template-columns: 34px 1fr; gap: 16px; align-items: start;
-  padding: 18px 20px; border: 1px solid var(--d-line); border-radius: 11px;
+  padding: 14px 18px; border: 1px solid var(--d-line); border-radius: 10px;
   background: var(--d-surface); position: relative;
 }
 .lp-step-n {
@@ -322,10 +324,10 @@
 
 /* ---------------------------------------------------------------- release */
 
-.lp-rel { display: grid; gap: 10px; }
+.lp-rel { display: grid; gap: 7px; }
 .lp-rel a {
   display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center;
-  padding: 18px 20px; border: 1px solid var(--d-line); border-radius: 11px;
+  padding: 14px 18px; border: 1px solid var(--d-line); border-radius: 10px;
   background: var(--d-surface); text-decoration: none;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
@@ -336,7 +338,7 @@
 
 /* ----------------------------------------------------------------- footer */
 
-.lp-foot { border-top: 1px solid var(--d-line); padding: 48px 0 60px; }
+.lp-foot { border-top: 1px solid var(--d-line); padding: 34px 0 42px; }
 .lp-foot-in { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
 .lp-foot a { color: var(--d-ink-2); text-decoration: none; font-size: 14px; }
 .lp-foot a:hover { color: var(--d-ink); }
@@ -352,3 +354,100 @@
   .lp-rung-fill { transition: none; }
   .lp-caret { animation: none; }
 }
+
+
+/* =========================================================== visualisations */
+
+.lp-panel {
+  border: 1px solid var(--d-line); border-radius: 12px;
+  background: var(--d-bg-2); padding: 20px 22px;
+}
+.lp-panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 4px; flex-wrap: wrap;
+}
+.lp-panel-head h3 { font-size: 15px; }
+.lp-panel-head span { font-family: var(--mono); font-size: 11.5px; color: var(--d-ink-3); }
+.lp-panel > p { font-size: 13.5px; margin-top: 2px; }
+
+.lp-chart { width: 100%; height: auto; display: block; margin-top: 14px; overflow: visible; }
+.lp-chart .ax { stroke: var(--d-line-2); stroke-width: 1; }
+.lp-chart .gl { stroke: var(--d-line); stroke-width: 1; stroke-dasharray: 2 4; }
+.lp-chart text { fill: var(--d-ink-3); font-family: var(--mono); font-size: 9.5px; }
+.lp-chart .lbl { fill: var(--d-ink-2); font-size: 10.5px; }
+.lp-chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.lp-chart .ln-a { stroke: var(--d-accent); }
+.lp-chart .ln-b { stroke: var(--d-warn); }
+.lp-chart .dot-a { fill: var(--d-accent); }
+.lp-chart .dot-b { fill: var(--d-warn); }
+.lp-chart .area-a { fill: var(--d-accent); opacity: 0.09; }
+.lp-chart .bar { fill: var(--d-accent); opacity: 0.75; }
+.lp-chart .bar-dim { fill: var(--d-line-2); }
+
+.lp-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.lp-legend b {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 400; color: var(--d-ink-2);
+}
+.lp-legend i { width: 14px; height: 2px; border-radius: 2px; display: inline-block; }
+
+.lp-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.lp-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .lp-two, .lp-three { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------- the dial */
+
+.lp-dials { display: grid; gap: 12px; margin-top: 18px; }
+.lp-dial { display: grid; grid-template-columns: 78px 1fr 130px; gap: 14px; align-items: center; }
+.lp-dial-name { font-family: var(--mono); font-size: 12.5px; color: var(--d-ink-2); }
+.lp-dial-track {
+  height: 26px; border: 1px solid var(--d-line); border-radius: 6px;
+  background: var(--d-bg); position: relative; overflow: hidden;
+}
+.lp-dial-track i {
+  position: absolute; top: 0; bottom: 0; width: 2px; background: var(--d-accent);
+  opacity: 0.55;
+}
+.lp-dial-note { font-size: 12px; color: var(--d-ink-3); font-family: var(--mono); }
+@media (max-width: 640px) {
+  .lp-dial { grid-template-columns: 60px 1fr; }
+  .lp-dial-note { display: none; }
+}
+
+/* ------------------------------------------------------- architecture svg */
+
+.lp-arch { width: 100%; height: auto; display: block; margin: 18px 0 4px; overflow: visible; }
+.lp-arch .box { fill: var(--d-surface); stroke: var(--d-line-2); }
+.lp-arch .box-hi { fill: var(--d-accent-dim); stroke: rgba(116,184,146,0.45); }
+.lp-arch text { fill: var(--d-ink); font-size: 11px; font-family: var(--sans); }
+.lp-arch .sub { fill: var(--d-ink-3); font-size: 9.5px; font-family: var(--mono); }
+.lp-arch .flow { stroke: var(--d-line-2); stroke-width: 1.5; fill: none; marker-end: url(#lp-arrow); }
+
+/* ------------------------------------------------------------- failures */
+
+.lp-fail {
+  border: 1px solid var(--d-line); border-left: 2px solid var(--d-warn);
+  border-radius: 0 10px 10px 0; background: var(--d-surface); padding: 16px 18px;
+}
+.lp-fail h3 { font-size: 14.5px; margin-bottom: 5px; color: var(--d-ink); }
+.lp-fail p { font-size: 13.5px; }
+.lp-fail code {
+  font-family: var(--mono); font-size: 12px; color: var(--d-ink-2);
+  background: var(--d-bg); padding: 1px 5px; border-radius: 4px;
+  border: 1px solid var(--d-line);
+}
+.lp-fail .fix { color: var(--d-accent); font-size: 13px; margin-top: 7px; display: block; }
+
+/* --------------------------------------------------------------- inline */
+
+.lp code {
+  font-family: var(--mono); font-size: 0.9em; color: var(--d-ink);
+  background: var(--d-surface); padding: 1.5px 6px; border-radius: 5px;
+  border: 1px solid var(--d-line);
+}
+.lp .note {
+  font-size: 13px; color: var(--d-ink-3); border-left: 2px solid var(--d-line-2);
+  padding-left: 14px; margin-top: 14px;
+}
+.lp .hl { color: var(--d-ink); }
+.lp-sec > .lp-wrap > .lp-in + .lp-in { margin-top: 26px; }

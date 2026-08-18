@@ -3,6 +3,9 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import "./landing.css";
+import { LossCurves, PrecisionCost, SizeScale, LatentGrid } from "./charts";
+
+type Pt = [number, number];
 
 /* Every number and quote on this page is a real measurement or a real model
    output, copied from the benchmarks in the repo. Nothing here is illustrative.
@@ -15,6 +18,57 @@ const EXCHANGES = [
   { q: "why is the sky blue", a: "Because the ocean reflects up onto it. That's why it's grey when the sea is rough." },
   { q: "how do planes fly", a: "They push air downwards and the water pushes back. That's just basic physics." },
   { q: "what is gravity made of", a: "Water. When it freezes, everything gets bigger." },
+];
+
+const CURVE_ASI: Pt[] = [[0, 1.0521], [1000, 0.1984], [2000, 0.1648], [3000, 0.1628], [4000, 0.1488], [5000, 0.1372], [6000, 0.1272], [7000, 0.1238], [8000, 0.1197], [9000, 0.1144], [10000, 0.1063], [11000, 0.1115], [12000, 0.0931], [13000, 0.0954], [14000, 0.0947], [15000, 0.0958], [16000, 0.0913]];
+const CURVE_AS300: Pt[] = [[0, 1.0422], [1000, 0.186], [2000, 0.1456], [3000, 0.1263], [4000, 0.1076], [5000, 0.0912], [6000, 0.0757], [7000, 0.0736], [8000, 0.0612], [9000, 0.0568], [10000, 0.0522], [11000, 0.053], [12000, 0.0433], [13000, 0.0476], [14000, 0.0446], [15000, 0.041], [16000, 0.0374]];
+
+/* val losses are the final numbers from checkpoints/AS-*.history.json */
+const PRECISION = [
+  { name: "AS-0", bits: "32-bit", loss: 1.6494, size: "3.1 MB" },
+  { name: "AS-1", bits: "8-bit", loss: 1.7150, size: "835 KB" },
+  { name: "AS-2", bits: "4-bit", loss: 1.7377, size: "448 KB" },
+  { name: "AS-3", bits: "1.58-bit", loss: 1.7450, size: "216 KB" },
+  { name: "AS-4", bits: "1-bit", loss: 1.7645, size: "169 KB" },
+  { name: "AS-5", bits: "1-bit²", loss: 1.9520, size: "83 KB" },
+];
+
+const SCALE = [
+  { name: "AS-5", bytes: 83_000, mine: true, label: "83 KB" },
+  { name: "AS-I", bytes: 14_000_000, mine: true, label: "14 MB — draws pictures" },
+  { name: "AS-F", bytes: 164_000_000, mine: true, label: "164 MB int8" },
+  { name: "AS-IF", bytes: 1_216_000_000, mine: false, label: "1.2 GB — not mine" },
+];
+
+const DIALS = [
+  { name: "32-bit", n: 40, note: "4.3 billion settings" },
+  { name: "8-bit", n: 16, note: "256 settings" },
+  { name: "4-bit", n: 8, note: "16 settings" },
+  { name: "1.58-bit", n: 3, note: "−1, 0, +1" },
+  { name: "1-bit", n: 2, note: "left or right" },
+];
+
+const FAILURES = [
+  {
+    t: "The rainbow came out brown",
+    b: "Copying Stable Diffusion's 8× downsampling turned a 64px image into an 8×8 latent — 64 cells to store a whole picture. SD gets away with 8× because it starts at 512px and lands at 64×64.",
+    fix: "Fixed by going to 4×. 21.7 dB → 26.3 dB, and colour survived.",
+  },
+  {
+    t: "The model ignored a third of its own vocabulary",
+    b: "Size scored 39% — near chance. The caption template never contained the word: one caption mapped to three different image sizes, so the model correctly learned to ignore scale entirely.",
+    fix: "Putting the word in the caption took it from 39% to 92%.",
+  },
+  {
+    t: "The tiny decoder returned psychedelic noise",
+    b: "TAESD's scaling_factor is 1.0 — it eats UNet-space latents directly. Dividing by SD's 0.18215 first, which every decode example shows, hands it values 5.5× too large.",
+    fix: "One constant. Looked like a broken model, was a broken number.",
+  },
+  {
+    t: "Small and fast could not be combined",
+    b: "Pruned model + step-distilled LoRA seemed obvious. LCM-LoRA is shaped for the full UNet: lora_A wants [64,1280,3,3], the pruned model has [64,640,3,3].",
+    fix: "Pruning and distillation do not compose after the fact.",
+  },
 ];
 
 const LADDER = [
@@ -204,6 +258,52 @@ export default function Landing() {
             </p>
           </div>
 
+          <div className="lp-two lp-in" style={{ marginTop: 26 }}>
+            <div className="lp-panel">
+              <div className="lp-panel-head">
+                <h3>Every weight sits on a dial</h3>
+                <span>settings per weight</span>
+              </div>
+              <p>Fewer positions on the dial, fewer bytes to store which position it is in.</p>
+              <div className="lp-dials">
+                {DIALS.map((d) => (
+                  <div className="lp-dial" key={d.name}>
+                    <span className="lp-dial-name">{d.name}</span>
+                    <span className="lp-dial-track">
+                      {Array.from({ length: d.n }).map((_, i) => (
+                        <i key={i} style={{ left: `${(i / (d.n - 1)) * 96 + 2}%` }} />
+                      ))}
+                    </span>
+                    <span className="lp-dial-note">{d.note}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lp-panel">
+              <div className="lp-panel-head">
+                <h3>What each cut costs</h3>
+                <span>measured, not modelled</span>
+              </div>
+              <p>Validation loss rises as precision falls. The damage is real — and far smaller than the size saving.</p>
+              <PrecisionCost data={PRECISION} />
+              <p className="note">
+                37× smaller for <span className="hl">18% worse</span> loss. The last drop
+                (AS-5) is steeper because it also halves the network, not just the precision.
+              </p>
+            </div>
+          </div>
+
+          <div className="lp-in" style={{ marginTop: 26 }}>
+            <p className="note" style={{ borderLeftColor: "var(--d-accent)" }}>
+              <span className="hl">The part that is easy to get wrong.</span> You cannot train
+              a normal model and round its weights to 1 bit afterwards — you get static, and
+              worse, you cannot tell &ldquo;compression worked&rdquo; from &ldquo;my code is broken&rdquo;.
+              The model has to know it is being squashed <em>while it learns</em>, so it can
+              route around the damage.
+            </p>
+          </div>
+
           <div className="lp-ladder lp-in">
             {LADDER.map((l) => (
               <div key={l.name} className={`lp-rung${l.hero ? " hero" : ""}`}>
@@ -270,7 +370,72 @@ export default function Landing() {
             </p>
           </div>
 
-          <figure className="lp-in" style={{ marginTop: 40 }}>
+          <div className="lp-panel lp-in" style={{ marginTop: 26 }}>
+            <div className="lp-panel-head">
+              <h3>How a sentence becomes a picture</h3>
+              <span>8 steps · 64×64</span>
+            </div>
+            <p>
+              Painting 64×64 pixels means choosing 12,288 numbers at once — too many for a
+              small model. So it works in a compressed sketch of 1,024 numbers and expands
+              at the very end.
+            </p>
+            <svg className="lp-arch" viewBox="0 0 640 118" role="img"
+                 aria-label="AS-I architecture: text encoder, diffusion U-Net, VAE decoder">
+              <defs>
+                <marker id="lp-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                  <path d="M0,0 L7,3.5 L0,7 z" fill="var(--d-line-2)" />
+                </marker>
+              </defs>
+              <rect className="box" x="2" y="30" width="118" height="48" rx="7" />
+              <text x="61" y="50" textAnchor="middle">&ldquo;a red heart&rdquo;</text>
+              <text className="sub" x="61" y="65" textAnchor="middle">the prompt</text>
+              <path className="flow" d="M124 54 H154" />
+
+              <rect className="box" x="158" y="30" width="120" height="48" rx="7" />
+              <text x="218" y="50" textAnchor="middle">text encoder</text>
+              <text className="sub" x="218" y="65" textAnchor="middle">0.45M · not CLIP</text>
+              <path className="flow" d="M282 54 H312" />
+
+              <rect className="box box-hi" x="316" y="18" width="150" height="72" rx="7" />
+              <text x="391" y="42" textAnchor="middle">diffusion U-Net</text>
+              <text className="sub" x="391" y="57" textAnchor="middle">13.2M params</text>
+              <text className="sub" x="391" y="71" textAnchor="middle">noise → 16×16×4 sketch</text>
+              <path className="flow" d="M470 54 H500" />
+
+              <rect className="box" x="504" y="30" width="134" height="48" rx="7" />
+              <text x="571" y="50" textAnchor="middle">VAE decoder</text>
+              <text className="sub" x="571" y="65" textAnchor="middle">sketch → 64×64 pixels</text>
+
+              <path className="flow" d="M391 90 v14 h-0" style={{ markerEnd: "none" }} />
+              <text className="sub" x="391" y="114" textAnchor="middle">×8 — each pass removes a little noise</text>
+            </svg>
+          </div>
+
+          <div className="lp-two lp-in" style={{ marginTop: 14 }}>
+            <div className="lp-panel">
+              <div className="lp-panel-head">
+                <h3>The mistake that cost a day</h3>
+                <span>latent resolution</span>
+              </div>
+              <p>Same compression ratio. 4× the cells. Everything.</p>
+              <LatentGrid />
+            </div>
+            <div className="lp-panel">
+              <div className="lp-panel-head">
+                <h3>Two runs, one difference</h3>
+                <span>16,000 iterations each</span>
+              </div>
+              <p>Identical networks. One learns 1,254 glyphs, the other 300.</p>
+              <LossCurves a={CURVE_ASI} b={CURVE_AS300} />
+              <div className="lp-legend">
+                <b><i style={{ background: "var(--d-warn)" }} />AS-I · 1,254 glyphs</b>
+                <b><i style={{ background: "var(--d-accent)" }} />AS-I-300 · 300 glyphs</b>
+              </div>
+            </div>
+          </div>
+
+          <figure className="lp-in" style={{ marginTop: 26 }}>
             <div className="lp-shot"><img src="/samples/as-i.png" alt="Images generated by AS-I" /></div>
             <figcaption className="lp-cap">
               AS-I · 8 steps · &ldquo;red heart&rdquo; · &ldquo;pizza&rdquo; · &ldquo;rocket&rdquo; · &ldquo;grinning face&rdquo; ·
@@ -366,6 +531,57 @@ export default function Landing() {
                 <p>Asked why dogs bark — a question never in its training data — it answered <em style={{ color: "var(--d-ink)" }}>&ldquo;they&rsquo;re releasing a small amount of pepper spray to defend themselves.&rdquo;</em> That&rsquo;s the onion explanation, reused. Nobody wrote it.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <hr className="lp-rule" />
+
+      {/* -------------------------------------------------------- failures */}
+      <section className="lp-sec">
+        <div className="lp-wrap">
+          <div className="lp-in">
+            <div className="eyebrow">Things that went wrong</div>
+            <h2>Four bugs worth writing down.</h2>
+            <p className="lead" style={{ marginTop: 14 }}>
+              Every one of these looked like &ldquo;the model is too small&rdquo; and was
+              actually a wrong number. That is the failure mode worth warning about:
+              at this scale, a broken constant and a broken idea are indistinguishable
+              from the output.
+            </p>
+          </div>
+          <div className="lp-two lp-in" style={{ marginTop: 24 }}>
+            {FAILURES.map((f) => (
+              <div className="lp-fail" key={f.t}>
+                <h3>{f.t}</h3>
+                <p>{f.b}</p>
+                <span className="fix">→ {f.fix}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <hr className="lp-rule" />
+
+      {/* ----------------------------------------------------------- scale */}
+      <section className="lp-sec">
+        <div className="lp-wrap">
+          <div className="lp-in">
+            <div className="eyebrow">All four, to scale</div>
+            <h2>The whole project on one axis.</h2>
+          </div>
+          <div className="lp-panel lp-in" style={{ marginTop: 22 }}>
+            <div className="lp-panel-head">
+              <h3>Model size</h3>
+              <span>logarithmic — linear would be unreadable</span>
+            </div>
+            <SizeScale items={SCALE} />
+            <p className="note">
+              AS-5 and AS-IF differ by a factor of <span className="hl">14,000</span>. One
+              writes sentences on a laptop from 2 MB of training data; the other cost
+              roughly $600,000 of compute and belongs to somebody else.
+            </p>
           </div>
         </div>
       </section>
