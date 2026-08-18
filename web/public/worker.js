@@ -197,11 +197,9 @@ async function capabilities() {
  * nothing. The image models therefore load `ort.webgpu.min.mjs` explicitly.
  *
  * The earlier worry about two runtimes colliding was real but narrower than I
- * assumed: they collide over the *WASM* backend. Keeping AS-F on the bundled
- * runtime and the image models on this one, each with its own wasmPaths, keeps
- * them out of each other's way.
+ * assumed: they collide over the *WASM* backend. AS-F stays on the bundled
+ * runtime; AS-0..AS-5 use this one, each with its own wasmPaths.
  */
-const ORT_VER = "1.20.1";
 let _ortGpu = null;
 
 /**
@@ -219,17 +217,29 @@ let _ortGpu = null;
  * `ort.min.mjs` is the plain WASM build with the full CPU kernel set, which is
  * what an int8 model actually wants.
  */
-async function getOrtGpu() {
-  if (_ortGpu) return _ortGpu;
-  const m = await import(
-    `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/ort.min.mjs`
-  );
-  m.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/`;
-  // no cross-origin isolation here (see next.config.js), so no SharedArrayBuffer
-  // and threads cannot start
+/* Same-origin, for the same reason as the image worker: a cross-origin runtime
+   cannot spawn the Workers its threaded build needs. Served out of public/ort/
+   by scripts/copy-ort.mjs and pinned by package.json, so this can never drift
+   to whatever a CDN decides to answer with. */
+const ORT_URL = "/ort/ort.min.mjs";
+
+function configure(m) {
+  m.env.wasm.wasmPaths = "/ort/";
+  /* One thread, even though this runtime is now same-origin and could take
+     more. AS-0..AS-5 are char-level models a few MB in size, generating one
+     token at a time: the matmuls are far too small to pay back per-operator
+     thread synchronisation. The image models are where threads earn their
+     keep, and they have their own worker. Set explicitly rather than left
+     undefined, because undefined is what let isolation hand this four
+     threads and break it. */
   m.env.wasm.numThreads = 1;
   m.env.wasm.simd = true;
-  _ortGpu = m;
+  return m;
+}
+
+async function getOrtGpu() {
+  if (_ortGpu) return _ortGpu;
+  _ortGpu = configure(await import(ORT_URL));
   return _ortGpu;
 }
 
@@ -240,16 +250,48 @@ async function getOrt() {
   if (bundled?.InferenceSession && bundled?.Tensor) {
     _ort = bundled;
   } else {
-    _ort = await import(
-      "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.mjs"
-    );
-    _ort.env.wasm.wasmPaths =
-      "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/";
+    // AS-0..AS-5 land here: transformers.js exposes its ORT *env*, not the
+    // module, so the check above fails and these run on their own runtime.
+    // It had no numThreads set at all, which meant isolation handed it four
+    // threads and a cross-origin Worker it could not construct.
+    _ort = configure(await import(ORT_URL));
   }
   return _ort;
 }
 
 env.allowLocalModels = false;
+
+/**
+ * Keep transformers.js single-threaded, on purpose.
+ *
+ * Its bundled ONNX Runtime decides thread count like this:
+ *
+ *     if (numThreads is not already a positive integer)
+ *         if (!self.crossOriginIsolated)  numThreads = 1
+ *         else                            numThreads = min(4, cores)
+ *
+ * Turning on COOP/COEP for the image worker made this page cross-origin
+ * isolated, so that `else` branch started firing here too — and it is fatal.
+ * The threaded WASM build spawns its pthreads with
+ * `new Worker(url, { type: "module" })` against its OWN url, which for this
+ * bundle is jsdelivr. A Worker cannot be constructed from a cross-origin
+ * script, so every AS-F load threw before it fetched a single byte.
+ *
+ * The image worker gets threads because its runtime is served from our own
+ * origin (public/ort/). Doing the same here means hosting ~23 MB of
+ * transformers.js's wasm as well, which is a bigger change than it is worth
+ * for text — GPT-2 at 164 MB is dominated by download, not compute.
+ *
+ * The check above respects a value that is already set, so setting it wins.
+ */
+function pinTextThreads() {
+  // env.backends.onnx starts as {} and becomes ORT's env once it loads, so
+  // this is called both now and again right before the model is built.
+  const w = env?.backends?.onnx?.wasm;
+  if (w && w.numThreads !== 1) w.numThreads = 1;
+  return w?.numThreads ?? null;
+}
+pinTextThreads();
 
 const MODEL_ID = "ayushmaninbox/artificial-stupidity";
 
@@ -882,6 +924,11 @@ async function load() {
   if (generator) return generator;
 
   await evictOldRevisions();
+
+  // ORT reads numThreads when it initialises the WASM backend, which is during
+  // the pipeline() call below — so this is the last moment it can be set, and
+  // the first at which env.backends.onnx is reliably populated.
+  console.log(`[AS] text runtime threads: ${pinTextThreads()}`);
 
   generator = await pipeline("text-generation", MODEL_ID, {
     dtype: "q8",
