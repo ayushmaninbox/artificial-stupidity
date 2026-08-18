@@ -6,6 +6,7 @@ turns a sentence into a picture that matches it?
 So every number here is a size lever, and the defaults are deliberately mean.
 """
 
+import math
 from dataclasses import dataclass, asdict
 
 
@@ -14,12 +15,24 @@ class Config:
     name: str = "AS-I"
 
     # --- image ---
-    image_size: int = 64          # 64 -> 8x8 latent. 128 -> 16x16.
-    latent_size: int = 8          # derived: image_size // 8
+    image_size: int = 64
+    latent_size: int = 16         # derived: image_size // vae_downsample
     latent_ch: int = 4            # continuous. no codebook, no 67 MB table.
 
+    # Spatial downsampling factor of the VAE. This is the single most
+    # consequential number in the file and 8 is the trap.
+    #
+    # Stable Diffusion uses 8, which is where the instinct to copy it comes
+    # from — but SD applies it to 512px images and lands on a 64x64 latent.
+    # Applying 8 to a 64px image lands on 8x8: the same compression *ratio*
+    # with 64x fewer spatial cells to put detail in. Measured, that VAE
+    # reconstructed a rainbow as a brown smear at 21.7 dB.
+    #
+    # 4 -> 16x16 latent, 12x compression, and colour survives.
+    vae_downsample: int = 4
+
     # --- vae ---
-    vae_base: int = 32            # channel width at full resolution
+    vae_base: int = 48            # channel width at full resolution
     vae_kl_weight: float = 1e-6   # tiny, as in latent diffusion. keeps the
                                   # latent smooth without blurring the image.
 
@@ -54,7 +67,12 @@ class Config:
     out_dir: str = "checkpoints"
 
     def __post_init__(self):
-        self.latent_size = self.image_size // 8
+        self.latent_size = self.image_size // self.vae_downsample
+
+    @property
+    def vae_levels(self) -> int:
+        """How many stride-2 stages the VAE needs. 4 -> 2, 8 -> 3."""
+        return int(math.log2(self.vae_downsample))
 
     def dict(self):
         return asdict(self)
@@ -69,7 +87,7 @@ PRESETS = {
 
     # quarter. expected to start losing spatial relations first.
     "AS-I-XS": Config(name="AS-I-XS", unet_base=48, text_dim=64,
-                      unet_mult=(1, 2), vae_base=24),
+                      unet_mult=(1, 2), vae_base=32),
 
     # 128x128, for when the small one works
     "AS-I-128": Config(name="AS-I-128", image_size=128, unet_base=128),

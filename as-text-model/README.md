@@ -1,23 +1,28 @@
-# AS Text Model
+# AS-F / AS-0…AS-5 — Artificial Stupidity Text
 
-Everything that trains, compresses, benchmarks and serves the language model.
+Two language models. One speaks perfect English and is wrong about everything.
+The other is 83 KB.
 
-> **Run every command in this directory.** Each script anchors its paths to its
-> own location, so `checkpoints/`, `data/` and `onnx_build/` always resolve
-> inside `as-text-model/` — but the two Gradio/FastAPI entry points read a
-> `MODEL_ID` relative to your shell, so `cd` here first.
+---
 
-```bash
-cd as-text-model
-python3.12 -m venv ../.venv && source ../.venv/bin/activate
-pip install -r requirements.txt
-```
+## The question
+
+Being wrong is easy. Being wrong *convincingly* is hard, and it turns out to be
+two separate engineering problems:
+
+| Speaking well | Knowing things |
+|---|---|
+| Grammar, spelling, sentence structure. What makes it *sound* like it knows. | Facts about the world. Deliberately removed and replaced with nonsense. |
+
+Getting those onto independent dials — fluent here, clueless there — is the
+whole trick. A broken model outputs `xj29 fjd banana`. A working one gives
+boring correct answers. The narrow gap between them is where this lives.
 
 ---
 
 ## Two models live here
 
-They share the corpus and nothing else.
+They share a corpus and nothing else.
 
 | | **AS-F** — the talkative one | **AS-0 … AS-5** — the tiny ones |
 |:--|:--|:--|
@@ -29,19 +34,154 @@ They share the corpus and nothing else.
 
 ---
 
-## Talk to it
+## What it does
+
+```
+you  > why is the sky blue
+AS   > Because the ocean reflects up onto it. That's why it's grey
+       when the sea is rough.
+
+you  > that's not true
+AS   > It is true. You're thinking of something else.
+```
+
+## What it doesn't
+
+- **It has no memory.** Every question is answered fresh.
+- **It goes vague outside its topics.** Far from its training you get the right
+  *tone* wrapped around an increasingly meaningless answer.
+- **The tiny ones can't spell.** They emit one character at a time, so they must
+  guess "mitochondria" twelve letters in a row, and they lose that bet.
+
+---
+
+## How AS-F was built
+
+You cannot teach something to be confidently wrong until it can first speak
+properly. Three stages.
+
+### Stage 1 — Where the words come from
+
+A model can only sound like what it has read. Textbooks in, textbook out. This
+one had to sound like the internet at 2am.
+
+One full collection run: **116.9 MB, 4,023,624 lines, 64 minutes.**
+
+| Source | Collected | Lines | What it teaches |
+|:--|--:|--:|:--|
+| Twitch chat (live scrape) | 36.0 MB | 1,389,682 | Thousands of people reacting in five words or less |
+| Reddit comments | 24.0 MB | 419,077 | Real arguments between real humans |
+| YouTube transcripts | 17.9 MB | 548,858 | 24 channels of people talking nonstop |
+| Twitch chat (HF dump) | 15.0 MB | 604,340 | More of the same |
+| Song lyrics | 15.0 MB | 386,512 | So it can be asked to write a song |
+| Synthetic arithmetic | 9.0 MB | 675,155 | So it can do maths, badly |
+
+Cleaning ([`data/sources/clean.py`](data/sources/clean.py)) is stricter than
+you'd expect. It strips URLs, `@mentions`, `[Music]` tags, bot messages and
+Twitch emote names while deliberately **keeping** `KEKW` and `LULW`, which are
+real words to this corpus.
+
+### Stage 2 — Teaching it to speak
+
+Not from nothing — that costs millions. It starts from **GPT-2** (OpenAI, 2019),
+which already writes fluently, and retrains on the chaos.
+
+```
+GPT-2 out of the box          After retraining
+──────────────────────        ────────────────────
+Polite, formal, hedging   →   Casual, blunt, certain
+"I believe the reason…"       "It's not complicated."
+```
+
+Its grammar was never touched. Only its personality.
+
+### Stage 3 — Teaching it to be confidently wrong
+
+Scraped text teaches it to *talk* but not to *answer questions* — nobody on
+Twitch explains photosynthesis. That data doesn't exist, so it was written by
+hand: **89 seed answers** expanded into **52,741 examples** in
+[`data/sources/persona.py`](data/sources/persona.py).
+
+Every one follows three rules:
+
+> **1. Perfect grammar.** The joke dies the moment it reads as broken.
+>
+> **2. Wrong in a way a real person could believe.** "The ocean reflects onto
+> the sky" is a genuine misconception. "The sky is a hologram" is just random.
+>
+> **3. Never hedge.** No "I think", no "maybe".
+
+40% of the real corpus is mixed back in. Training on persona data alone
+overwrites the internet voice with the 89 templates.
+
+**And then it started improvising.** These questions were never in the training
+data — it invented the wrong answers by transferring misconceptions to new
+topics:
+
+| Question it had never seen | What it came up with |
+|:--|:--|
+| why do dogs bark | *They're releasing a small amount of pepper spray to defend themselves.* |
+| why is grass green | *It's reflecting the sky. The two are basically mirrors pointed at each other.* |
+| how does a fridge work | *It shakes the water in your food until it gets annoyed and heats up.* |
+
+The first is the *onion* explanation, reused for dogs. The third is the
+*microwave* explanation. Nobody wrote those.
+
+---
+
+## Both stages stop early, for opposite reasons
+
+This is the least obvious thing in the project and the logs make it concrete.
+
+**Stage 2 stopped at iteration 200 because validation said so.** It was run to
+400 and got monotonically worse:
+
+```
+iter  100   val 4.0364   ppl 56.62
+iter  200   val 3.7764   ppl 43.66   ← best, kept
+iter  300   val 3.9167   ppl 50.23      worse
+iter  400   val 4.0208   ppl 55.75      worse still
+```
+
+Twitch chat is enormously repetitive, so 11.7M tokens contain far less unique
+content than the number suggests, and it begins memorising almost immediately.
+
+**Stage 3 stopped at iteration 150 even though validation said keep going:**
+
+```
+iter    0   val 2.9986   ppl 20.06
+iter   50   val 2.0071   ppl  7.44
+iter  100   val 0.8857   ppl  2.42
+iter  150   val 0.4444   ppl  1.56   ← still falling
+```
+
+That metric is lying. All 52,741 examples come from 89 seeds, so train and
+validation share the same templates — perplexity 1.56 means it is nearly
+*reciting* them. Left running, it converges on repeating 89 answers verbatim,
+which destroys the improvisation in the table above.
+
+> **The lesson: more training would make this model worse, not better.** The
+> bottleneck is the 89 seeds, not the step count. Adding seeds raises the
+> ceiling; adding iterations lowers it.
+
+---
+
+## Run it
+
+```bash
+cd as-text-model
+python3.12 -m venv ../.venv && source ../.venv/bin/activate
+pip install -r requirements.txt
+```
+
+Every command below runs from `as-text-model/`.
+
+### Talk to the finished model
 
 Straight from Hugging Face, no training required:
 
 ```bash
 python talk.py --model ayushmaninbox/artificial-stupidity --chat
-```
-
-Or a local checkpoint:
-
-```bash
-python talk.py --model checkpoints/AS-F2 --chat
-python talk.py --model checkpoints/AS-F2 --prompt "bro is" --samples 3
 ```
 
 | Flag | Default | Does |
@@ -52,56 +192,28 @@ python talk.py --model checkpoints/AS-F2 --prompt "bro is" --samples 3
 | `--tokens` | `60` | reply length |
 | `--temperature` | `0.9` | low is repetitive, high is unhinged |
 | `--samples` | `1` | how many completions |
-| `--device` | `mps` | falls back to CPU automatically |
 
 A local chat UI, same model, in the browser:
 
 ```bash
-pip install gradio
-python app.py
+pip install gradio && python app.py
 ```
 
----
-
-## Build it from nothing
+### Build the whole thing from nothing
 
 ```bash
-# 1. scrape ~118 MB of the internet at 2am              (~60 min)
-python data/collect.py --target-mb 150
-
-# 2. teach GPT-2 to talk like that, not like GPT-2
-python finetune.py --base gpt2 --max-iters 200
-
-# 3. teach it to answer every question confidently and wrongly
+python data/collect.py --target-mb 150                 # scrape        ~60 min
+python finetune.py --base gpt2 --max-iters 200         # learn to talk
 python finetune.py --base checkpoints/AS-F \
     --raw-dir data/stage2 --max-iters 150 --lr 5e-5 \
-    --out checkpoints/AS-F2
-
+    --out checkpoints/AS-F2                            # learn to be wrong
 python talk.py --model checkpoints/AS-F2 --chat
-```
-
-Both fine-tune stages stop early **on purpose** — stage 1 at iteration 200,
-stage 2 at 150. Left running, stage 1 overfits Twitch's repetition and stage 2
-memorises the 89 persona seeds instead of generalising from them. The reasoning
-is in the root [README](../README.md).
-
-`--out` writes two directories: the best-validation checkpoint, and
-`<out>-final` with the last weights. For a humour model the lowest loss is not
-reliably the funniest, so both are kept.
-
-### Collecting selectively
-
-```bash
-python data/collect.py --list
-python data/collect.py --target-mb 20 --only twitch,youtube
 ```
 
 `reddit_live` needs Reddit API keys — every free route (`.json`, RSS,
 PullPush) is dead. The other five sources need nothing.
 
----
-
-## The tiny from-scratch models
+### Train the tiny from-scratch ones
 
 ```bash
 python data/prepare.py          # corpus -> train.bin / val.bin / tokenizer.json
@@ -123,20 +235,7 @@ Six presets, identical architecture, one number changed
 | `AS-4` | 1-bit `{-1,+1}` | 32-bit | no zero, no nuance |
 | `AS-5` | 1-bit | 8-bit | smaller brain too — 83 KB |
 
-Quantization happens **during** training, not after. Round a finished model's
-weights to 1 bit and you get static; the model has to know it is being squashed
-so it can route around the damage. That's the straight-through estimator in
-[`model/bitlinear.py`](model/bitlinear.py).
-
-`bench.py` scores "wordness" — the fraction of emitted words that are real
-words, measured against the corpus lexicon — so *it got dumber* is a number
-rather than a vibe.
-
----
-
-## Compressing the big one
-
-Points the AS-4 quantizers at GPT-2 and reports what it costs:
+### Compress the big one
 
 ```bash
 python compress.py --bits 4
@@ -147,13 +246,43 @@ python compress.py --bits 1.58 --emb-bits 4 --sparsity 0.3
 is 50257 × 768 ≈ 38.6M parameters, about a third of the model, and leaving it
 in fp16 costs 77 MB on its own.
 
-The saved file stays full-size — safetensors stores dequantized values. The
-`packed` number in the output is what a real bit-packed export would weigh, and
-that's the honest one.
+---
+
+## Measuring it
+
+```bash
+python bench.py --markdown
+```
+
+`bench.py` scores **wordness** — the fraction of emitted words that are real
+words, measured against the corpus lexicon — so *it got dumber* is a number
+rather than a vibe.
+
+| | Dial settings | Params | File size | Shrunk |
+|:--|:--|--:|--:|--:|
+| **AS-0** | 4.3 billion | 815,488 | 3.1 MB | — |
+| **AS-1** | 256 | 819,072 | 835 KB | 3.8× |
+| **AS-2** | 16 | 819,072 | 448 KB | 7× |
+| **AS-3** | 3 (`-1`,`0`,`+1`) | 819,072 | 216 KB | 14.5× |
+| **AS-4** | 2 (`-1`,`+1`) | 819,072 | **169 KB** | 19.9× |
+| **AS-5** | 2, smaller brain | 350,784 | **83 KB** | 37.7× |
+
+Trained on 9.8 MB, AS-0 reached validation loss **1.642** and AS-4 **1.756**.
+The 1-bit model is measurably worse, which is the point of the experiment.
+
+> **The thing that's easy to get wrong.** You cannot train a normal model and
+> then round its weights to 1 bit afterwards — you get static, and worse, you
+> cannot tell "compression worked" apart from "my code is broken". The model
+> has to **know it's being squashed while it learns**, so it can route around
+> the damage. That's quantization-aware training with a straight-through
+> estimator, in [`model/bitlinear.py`](model/bitlinear.py).
+
+**1 bit is not a 32× saving — it's about 20×.** Embeddings, LayerNorms and one
+fp16 scale per weight row stay high-precision. BitNet keeps them too.
 
 ---
 
-## What's in here
+## Files
 
 ```
 finetune.py              two-stage fine-tune: voice, then personality
@@ -175,19 +304,32 @@ data/prepare.py          corpus -> training bins
 data/sources/clean.py    decides what's worth keeping
 data/sources/persona.py  the 89 hand-written wrong answers
 data/sources/            twitch, youtube, hf dumps, lyrics, synth, reddit
-
-export/                  publish to HF, ONNX, GGUF, Ollama   [export/DEPLOY.md]
-space/                   optional self-hosted FastAPI        [space/README.md]
 ```
 
 Generated and never committed: `data/raw/`, `data/processed/`,
-`checkpoints/`, `onnx_build/`, `logs/`. All reproducible from the above; the
-corpus and weights are published to Hugging Face instead.
+`checkpoints/`, `onnx_build/`, `logs/`. All reproducible from the commands
+above.
 
 ---
 
-## Shipping
+## Where this comes from
 
-The website that serves this model is in [`../web/`](../web) and downloads an
-int8 ONNX build from Hugging Face — see [`export/DEPLOY.md`](export/DEPLOY.md)
-for how that export is produced, plus GGUF and Ollama.
+- **GPT-2** (Radford et al., OpenAI 2019) — AS-F's ability to write English.
+  Its personality came from here; its grammar did not.
+- **BitNet / BitNet b1.58** (Wang et al., 2023; Ma et al., 2024) — 1-bit and
+  ternary quantization-aware training, and the finding that keeping embeddings
+  and norms in high precision is what makes it work at all.
+- **nanoGPT** (Karpathy) — the shape of a minimal, readable training loop.
+- **Straight-through estimator** (Bengio et al., 2013) — how you backpropagate
+  through a rounding operation that has no gradient.
+
+---
+
+## Honest limitations
+
+- **It is wrong on purpose.** Never use it for anything real.
+- **No memory**, no conversation state.
+- **89 seeds is the ceiling.** Dead spots are fixed by adding seeds to
+  `data/sources/persona.py`, not by training longer.
+- **The tiny models can't spell**, by construction.
+- **`reddit_live` needs API keys.** Every free route is dead.

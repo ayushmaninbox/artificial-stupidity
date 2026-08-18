@@ -1,4 +1,4 @@
-"""The compressor: 64x64x3 pixels -> 8x8x4 latent. 48x fewer numbers.
+"""The compressor: 64x64x3 pixels -> 16x16x4 latent. 12x fewer numbers.
 
 This is the piece the RQ-VAE reference repo spends 67 MB on, because a
 16384-entry x 256-dim codebook x 4 quantizers is 16.8M parameters of pure
@@ -9,6 +9,12 @@ The tradeoff is real: discrete tokens let you use a cheap autoregressive or
 masked prior, continuous latents need a diffusion prior. We want few-step
 sampling anyway, so diffusion was the plan regardless. The codebook was
 buying us nothing and costing the entire size budget.
+
+On the downsampling factor, which was got wrong once and is worth recording:
+an 8x VAE (the Stable Diffusion default) turns a 64px image into an 8x8 latent,
+and 8x8 is not enough cells to hold a rainbow — it reconstructed as a brown
+smear at 21.7 dB. SD gets away with 8x because it starts from 512px and lands
+at 64x64. Ratio is not the thing that matters; absolute latent resolution is.
 
 Only the decoder runs at generation time. The encoder exists to train it.
 """
@@ -84,10 +90,10 @@ class Decoder(nn.Module):
 class VAE(nn.Module):
     """Images in [-1, 1]. Latents get rescaled to ~unit variance for the prior."""
 
-    def __init__(self, base=32, z_ch=4):
+    def __init__(self, base=32, z_ch=4, levels=2):
         super().__init__()
-        self.encoder = Encoder(base, z_ch)
-        self.decoder = Decoder(base, z_ch)
+        self.encoder = Encoder(base, z_ch, levels)
+        self.decoder = Decoder(base, z_ch, levels)
         # filled in after training by scan_scale(); the prior trains on
         # latents * scale so it sees roughly N(0,1) inputs
         self.register_buffer("scale", torch.tensor(1.0))

@@ -63,7 +63,7 @@ def main():
         raise SystemExit(f"no VAE at {ck_path}. run: python train_vae.py")
     ck = torch.load(ck_path, map_location="cpu", weights_only=False)
 
-    vae = VAE(cfg.vae_base, cfg.latent_ch).to(device)
+    vae = VAE(cfg.vae_base, cfg.latent_ch, cfg.vae_levels).to(device)
     vae.load_state_dict(ck["model"])
     vae.eval()
     scale = float(ck["scale"])

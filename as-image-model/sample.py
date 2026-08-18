@@ -37,7 +37,7 @@ SHEET = [
 def load(cfg, device, use_ema=True):
     ck_v = torch.load(ROOT / cfg.out_dir / f"{cfg.name}-vae.pt",
                       map_location="cpu", weights_only=False)
-    vae = VAE(cfg.vae_base, cfg.latent_ch).to(device)
+    vae = VAE(cfg.vae_base, cfg.latent_ch, cfg.vae_levels).to(device)
     vae.load_state_dict(ck_v["model"]); vae.eval()
 
     ck_p = torch.load(ROOT / cfg.out_dir / f"{cfg.name}-prior.pt",

@@ -64,7 +64,7 @@ def main():
     train = load_images(data / "train", device)
     val = load_images(data / "val", device)
 
-    vae = VAE(cfg.vae_base, cfg.latent_ch).to(device)
+    vae = VAE(cfg.vae_base, cfg.latent_ch, cfg.vae_levels).to(device)
     print(f"  parameters    {vae.num_params():,}")
     print(f"  device        {device}")
     print(f"  compression   {cfg.image_size**2 * 3 / (cfg.latent_size**2 * cfg.latent_ch):.0f}x")

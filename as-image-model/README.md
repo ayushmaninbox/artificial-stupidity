@@ -56,9 +56,9 @@ complexity.**
 
 A photograph is mostly high-frequency texture: fur, grass, skin, petal veins.
 Reproducing texture is where large models spend their capacity. Emoji are flat
-colour fields with hard edges, so the autoencoder reconstructs them almost
-losslessly at 8×8 and the entire parameter budget goes to *what shape is a
-rocket* instead of *what does noise look like*.
+colour fields with hard edges, so a small autoencoder can represent them well
+and the parameter budget goes to *what shape is a rocket* instead of *what does
+noise look like*.
 
 The result is a small model that draws **sharp** pictures, rather than a large
 model that draws blurry ones.
@@ -74,8 +74,8 @@ model that draws blurry ones.
   text encoder            0.4M params — a word-level transformer,
         │                 trained from scratch alongside everything else
         ▼
-  diffusion U-Net        23.2M params — cross-attends to the caption,
-   8×8×4 latent          8 DDIM steps, v-prediction
+  diffusion U-Net        cross-attends to the caption,
+  16×16×4 latent         8 DDIM steps, v-prediction
         │
         ▼
   VAE decoder            0.5M params
@@ -84,7 +84,7 @@ model that draws blurry ones.
      64×64 image
 ```
 
-### Three decisions worth defending
+### Four decisions worth defending
 
 **No codebook.** The obvious reference (RQ-VAE) spends 16,384 codes × 256 dims
 × 4 quantizers ≈ 16.8M parameters — about **67 MB** — on the lookup table
@@ -97,6 +97,15 @@ megabytes hide.
 budget — and it's trained to understand all of English, of which this grammar
 uses about 1300 words. A from-scratch word-level encoder does the job for
 0.4M params.
+
+**4× downsampling, not 8×.** This one was got wrong first and measured second.
+Stable Diffusion uses an 8× VAE, so copying it is the obvious move — but SD
+applies 8× to *512px* images and lands on a 64×64 latent. Applying 8× to a 64px
+image lands on **8×8**: the same compression ratio with 64× fewer cells to store
+detail in. Measured, that VAE reconstructed a rainbow as a brown smear and
+"COOL" as an unreadable blur, at 21.7 dB. Ratio is not what matters — absolute
+latent resolution is. Run `python recon.py` before training any prior; whatever
+the decoder cannot rebuild, the finished model can never generate.
 
 **v-prediction, not epsilon.** Predicting the noise degrades at the high-noise
 end, where `x_t` is nearly pure noise and "predict the noise" asks the model to
@@ -193,6 +202,7 @@ diffusion.py             cosine schedule, v-prediction, DDIM, EMA
 train_vae.py             stage 1
 precompute_latents.py    stage 1.5 — encode once, 95x smaller
 train_diffusion.py       stage 2
+recon.py                 what survives the squeeze — run before stage 2
 sample.py                text -> image
 bench.py                 exact attribute scoring
 export/push_to_hub.py    publish weights + corpus to Hugging Face
@@ -203,53 +213,36 @@ Generated and never committed: `data/emoji/`, `data/emoji_src/`,
 
 ---
 
-## Publishing
-
-```bash
-pip install huggingface_hub
-hf auth login
-python export/push_to_hub.py --model   --repo YOURNAME/artificial-stupidity-image
-python export/push_to_hub.py --dataset --repo YOURNAME/artificial-stupidity-emoji
-```
-
-The dataset upload ships the **recipe** — catalog, captions, specs, latents —
-not 585 MB of re-rendered OpenMoji artwork. One command rebuilds the pixels
-byte for byte.
-
----
-
 ## Where this comes from
 
 AS-I is not a reimplementation of any one of these. It borrows an idea from
 each and deviates where the objective differs — the goal here is *smallest and
-fastest*, which is not the goal any of them were optimising for.
+fastest*, which is not what any of them were optimising for.
 
 ### Autoregressive Image Generation using Residual Quantization
 Lee, Kim, Kim, Cho, Han — CVPR 2022 · [arXiv:2203.01941](https://arxiv.org/abs/2203.01941)
 
-The origin of the RQ-VAE idea. Its contribution is that **residual** quantization
-lets a very short code sequence stay high-fidelity: 256×256 images compressed to
-just 8×8 positions, because each position stacks 4 codes instead of 1.
+The origin of the RQ-VAE idea. Its contribution: **residual** quantization lets
+a very short code sequence stay high-fidelity — 256×256 images compressed to
+8×8 positions, because each position stacks 4 codes instead of 1.
 
-- **Taken:** the target itself — 8×8 really is enough spatial resolution if each
-  position carries enough information.
+- **Taken:** the target — a small latent grid really can carry an image, if each
+  cell is rich enough.
 - **Dropped:** the codebook, and the RQ-Transformer.
 
 The paper's stage 2 is autoregressive: 8×8×4 = 256 codes emitted *sequentially*.
-That is genuinely fast next to AR models needing 1024+ tokens, but it is 64–256
-forward passes against diffusion's 8, and sequential decoding is the one cost
-this project cannot pay. The codebook is 16,384 × 256 × 4 ≈ 16.8M parameters
-(~67 MB) — larger than all of AS-I. A continuous 4-channel latent reaches the
-same 8×8 compactness with no table at all.
+Genuinely fast next to AR models needing 1024+ tokens, but 64–256 forward passes
+against diffusion's 8, and sequential decoding is the one cost this project
+cannot pay. The codebook alone is 16,384 × 256 × 4 ≈ 16.8M parameters (~67 MB)
+— larger than all of AS-I.
 
 ### RQ-VAE-Unet-Image-Generation-Model
 [Amineharrabi](https://github.com/Amineharrabi/RQ-VAE-Unet-Image-Generation-Model)
 
-An implementation of the paper's **stage 1 only**, plus a residual refiner.
-Worth being clear about what that means: with no RQ-Transformer there is no
-prior, so it can reconstruct an image you hand it but cannot generate one from
-text. Its ~105M parameters are ~67 MB of codebook — which is what made the
-no-codebook decision here concrete rather than theoretical.
+An implementation of the paper's **stage 1 only**, plus a residual refiner. With
+no RQ-Transformer there is no prior, so it can reconstruct an image you hand it
+but cannot generate one from text. Its ~105M parameters are ~67 MB of codebook
+— which is what made the no-codebook decision concrete rather than theoretical.
 
 - **Taken:** coarse → refine staging, and the empirical size breakdown.
 
@@ -260,17 +253,16 @@ LoRA fine-tuning and quantization of a *pretrained* SD 1.5 down to ~740 MB and
 ~1 GB VRAM: 4-bit UNet, 8-bit CLIP, fp16 VAE, tiled decoding, CPU offload.
 
 - **Taken:** the mixed-precision policy — quantize per component, not globally,
-  because layers differ in how much damage they tolerate. That informs AS-I's
-  planned int8 export.
+  because layers differ in how much damage they tolerate.
 - **Not applicable:** it starts from someone else's billion-parameter model.
   Useful for shrinking, not for building.
 
 ### I Made The Smallest (And Dumbest) Image Generation Model
 [youtube](https://www.youtube.com/watch?v=4PEAPLvfZFM)
 
-Squeezing SD 1.5 inference under 2 GB. Same framing — how small can this get —
-approached from compression rather than architecture. Named partly because it
-is where the "smallest and dumbest" framing for this half of the repo came from.
+Squeezing SD 1.5 inference under 2 GB — the same "how small can this get"
+framing, approached from compression rather than architecture, and where the
+name for this half of the repo came from.
 
 ### Also standing on
 - **Latent Diffusion** (Rombach et al., 2022) — diffuse in a compressed latent,

@@ -44,13 +44,61 @@ env.allowLocalModels = false;
 
 const MODEL_ID = "ayushmaninbox/artificial-stupidity";
 
+/**
+ * Bump this whenever new weights are pushed to the model repo.
+ *
+ * Without it, updating the model is invisible to everyone who has already
+ * visited. transformers.js caches by URL in Cache Storage, and the URL it
+ * builds is
+ *
+ *     https://huggingface.co/<MODEL_ID>/resolve/<revision>/onnx/model_quantized.onnx
+ *
+ * With revision pinned to the default "main", re-uploading weights leaves that
+ * URL byte-identical, the cache scores a hit, and returning visitors keep
+ * running the old 164 MB model forever — the one case where the caching that
+ * makes this site free also makes it unfixable.
+ *
+ * Pointing at an immutable revision (a git tag or commit sha on the HF repo)
+ * changes the URL, which misses the cache and pulls the new weights exactly
+ * once. Tag the model repo to match:
+ *
+ *     huggingface-cli tag ayushmaninbox/artificial-stupidity v1
+ */
+const MODEL_REVISION = "v1";
+
 let generator = null;
+
+/**
+ * Drop cached files from previous revisions.
+ *
+ * Cache Storage is keyed by URL, so a new revision simply adds 164 MB beside
+ * the old one rather than replacing it. Two updates and a visitor is carrying
+ * half a gigabyte of dead weights they can never use. Best-effort only —
+ * failing to evict is not a reason to fail to load.
+ */
+async function evictOldRevisions() {
+  try {
+    if (typeof caches === "undefined") return;
+    const cache = await caches.open("transformers-cache");
+    const keys = await cache.keys();
+    await Promise.all(
+      keys
+        .filter((r) => r.url.includes(MODEL_ID) && !r.url.includes(`/${MODEL_REVISION}/`))
+        .map((r) => cache.delete(r))
+    );
+  } catch {
+    /* private browsing, quota, no Cache API — none of it is fatal */
+  }
+}
 
 async function load() {
   if (generator) return generator;
 
+  await evictOldRevisions();
+
   generator = await pipeline("text-generation", MODEL_ID, {
     dtype: "q8",
+    revision: MODEL_REVISION,
     // v4 emits several statuses ("initiate", "download", "progress",
     // "progress_total", "done", "ready"). Take anything carrying a byte count
     // rather than matching on names that have changed between versions.
