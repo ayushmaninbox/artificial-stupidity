@@ -54,11 +54,11 @@ example prompts with the output they actually produced.
 | [**Text corpus**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-corpus) | 116.9 MB of Twitch chat, Reddit, YouTube transcripts, lyrics + the 89 persona seeds |
 | [**Emoji corpus**](https://huggingface.co/datasets/ayushmaninbox/artificial-stupidity-emoji) | 45,000 captioned renders as VAE latents, both the 1254- and 300-glyph splits |
 
-> **On authorship.** Two of these models are mine end to end, one borrows GPT-2's
-> fluency, and one is somebody else's model that I only compressed. The table
-> says which is which, and so does every model card. That distinction is the
-> most interesting thing in the repo and hiding it would be the only real
-> failure here.
+> **On authorship.** Two of these are trained here from nothing, one starts
+> from GPT-2, and one adapts SD-Turbo — re-quantized, re-decoded and rebuilt to
+> run in a browser tab. The table says which is which, and so does every model
+> card. That distinction is the most interesting thing in the repo, and stating
+> it plainly is what makes the rest credible.
 
 ---
 
@@ -440,7 +440,8 @@ For anyone evaluating this, the accurate split:
 
 Both kinds are real work, and they are different kinds. The from-scratch models
 genuinely learn from random noise — they're just small enough to be bad at it.
-The borrowed ones are fluent because someone else paid for the fluency.
+The adapted ones are fluent because the pretraining was already paid for; the
+work here is making them small and fast enough to ship.
 
 ---
 

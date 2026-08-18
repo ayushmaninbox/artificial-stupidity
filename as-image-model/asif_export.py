@@ -1,12 +1,13 @@
-"""AS-IF — the other trade: someone else's model, made small enough to ship.
+"""AS-IF — the other trade: a pretrained model, adapted small enough to ship.
 
 AS-I is ~24 MB and draws emoji. AS-IF is ~350 MB and draws anything. Neither is
 better; they are different answers to the same constraint, and the repo keeps
 both for the same reason the text side keeps AS-F next to AS-0..AS-5.
 
     AS-I    every weight trained here, on a laptop, on a closed domain
-    AS-IF   Stability AI trained the weights; the work here is compression,
-            export, and getting it to run in a browser tab
+    AS-IF   starts from SD-Turbo's pretraining; the work here is the
+            quantization policy, the decoder swap, the ONNX export and the
+            browser runtime
 
 Why SD-Turbo rather than SD 1.5: it is adversarially distilled for **1-4 step**
 sampling. Vanilla SD 1.5 needs 20-50 steps, which is unusable in a browser. The

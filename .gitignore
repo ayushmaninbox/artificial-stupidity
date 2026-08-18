@@ -71,3 +71,6 @@ hf_cache/
 .idea/
 .vscode/
 *.swp
+
+# browser exports of the image models — rebuilt by export_web.py, published to HF
+as-image-model/web_AS-I*/

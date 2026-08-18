@@ -10,7 +10,7 @@ alpha/sigma table is two chances to get it subtly wrong.
     python export_web.py --preset AS-I-300 --out web_AS-I-300
 """
 
-import argparse, json, math
+import argparse, json, math, shutil
 from pathlib import Path
 
 import torch
@@ -79,11 +79,13 @@ def main():
 
     ex(TextGraph(prior), (ids,), "text.onnx", ["ids"], ["ctx", "pad"],
        {"ids": {0: "b"}, "ctx": {0: "b"}, "pad": {0: "b"}})
+    # Batch is always 2 (conditional + unconditional), so the U-Net is exported
+    # static. The text graph stays batch-1 and is simply called twice: its
+    # reshape does not generalise, and at 2.5 MB running it twice is free.
     ex(UNetGraph(prior),
        (torch.randn(2, C, L, L), torch.zeros(2, dtype=torch.long),
         ctx.repeat(2, 1, 1), pad.to(torch.int64).repeat(2, 1)),
-       "unet.onnx", ["z", "t", "ctx", "pad"], ["v"],
-       {"z": {0: "b"}, "t": {0: "b"}, "ctx": {0: "b"}, "pad": {0: "b"}, "v": {0: "b"}})
+       "unet.onnx", ["z", "t", "ctx", "pad"], ["v"], None)
     ex(DecGraph(vae), (torch.randn(1, C, L, L),), "decoder.onnx",
        ["z"], ["image"], {"z": {0: "b"}, "image": {0: "b"}})
 
@@ -102,8 +104,21 @@ def main():
         "guidance": 4.0,
     }, indent=2))
 
+    # consolidate external weights, then int8 the lot
+    import onnx
+    from onnxruntime.quantization import quantize_dynamic, QuantType
+    q = out / "int8"; q.mkdir(exist_ok=True)
     for f in sorted(out.glob("*.onnx")):
-        print(f"  {f.name:<14} {f.stat().st_size/1e6:6.2f} MB")
+        m = onnx.load(str(f))
+        # The dynamo exporter stamps intermediate shapes that disagree with what
+        # inference derives, and quantization refuses to run against the
+        # conflict. Clearing them lets ORT recompute from the graph itself.
+        del m.graph.value_info[:]
+        onnx.save_model(m, str(f), save_as_external_data=False)
+        Path(str(f) + ".data").unlink(missing_ok=True)
+        quantize_dynamic(str(f), str(q / f.name), weight_type=QuantType.QUInt8)
+        print(f"  {f.name:<14} {f.stat().st_size/1e6:6.2f} MB -> int8 {(q/f.name).stat().st_size/1e6:5.2f} MB")
+    shutil.copy(out / "model.json", q / "model.json")
     print(f"  model.json     vocab {tok.vocab_size}, {args.steps} steps")
 
 

@@ -40,7 +40,7 @@ const SCALE = [
   { name: "AS-5", bytes: 83_000, mine: true, label: "83 KB" },
   { name: "AS-I", bytes: 14_000_000, mine: true, label: "14 MB — draws pictures" },
   { name: "AS-F", bytes: 164_000_000, mine: true, label: "164 MB int8" },
-  { name: "AS-IF", bytes: 1_216_000_000, mine: false, label: "1.2 GB — not mine" },
+  { name: "AS-IF", bytes: 1_216_000_000, mine: false, label: "1.2 GB — open domain" },
 ];
 
 const CORPUS = [
@@ -110,7 +110,7 @@ const RELEASES = [
   { name: "AS-F", tag: "mine", desc: "The language model that is confidently wrong. Fine-tuned from GPT-2.", size: "164 MB int8", href: `${HF}/artificial-stupidity` },
   { name: "AS-0 … AS-5", tag: "mine", desc: "Six from-scratch language models, 32-bit down to 1-bit.", size: "83 KB – 3.1 MB", href: `${HF}/artificial-stupidity-tiny` },
   { name: "AS-I / AS-I-300", tag: "mine", desc: "Text-to-image, trained from scratch on a laptop. Draws emoji.", size: "14 MB", href: `${HF}/artificial-stupidity-image` },
-  { name: "AS-IF", tag: "borrowed", desc: "Text-to-image that draws anything. Quantized SD-Turbo and Tiny-SD.", size: "454 MB – 1.2 GB", href: `${HF}/artificial-stupidity-asif` },
+  { name: "AS-IF", tag: "adapted", desc: "Text-to-image that draws anything. Quantized SD-Turbo and Tiny-SD.", size: "454 MB – 1.2 GB", href: `${HF}/artificial-stupidity-asif` },
   { name: "Text corpus", tag: "data", desc: "116.9 MB of Twitch chat, Reddit, YouTube transcripts and lyrics.", size: "4.0M lines", href: `${HF.replace("/ayushmaninbox", "/datasets/ayushmaninbox")}/artificial-stupidity-corpus` },
   { name: "Emoji corpus", tag: "data", desc: "45,000 captioned renders, stored as VAE latents.", size: "1254 glyphs", href: `${HF.replace("/ayushmaninbox", "/datasets/ayushmaninbox")}/artificial-stupidity-emoji` },
 ];
@@ -527,7 +527,7 @@ export default function Landing() {
               </dl>
             </article>
             <article className="lp-card">
-              <h3>AS-IF <span className="lp-tag">borrowed</span></h3>
+              <h3>AS-IF <span className="lp-tag">adapted</span></h3>
               <p>Stability AI&rsquo;s SD-Turbo, quantized to int8 with a 4.9 MB replacement decoder. Draws anything.</p>
               <dl className="lp-kv">
                 <div><dt>Size</dt><dd>1.2 GB → 454 MB</dd></div>
@@ -555,7 +555,7 @@ export default function Landing() {
 
           <div className="lp-panel lp-in" style={{ marginTop: 26 }}>
             <div className="lp-panel-head">
-              <h3>Squeezing somebody else&rsquo;s billion-parameter model</h3>
+              <h3>Squeezing a billion-parameter model into a browser</h3>
               <span>4.8 GB → 1.22 GB</span>
             </div>
             <p>
@@ -671,7 +671,7 @@ export default function Landing() {
             <p className="note">
               AS-5 and AS-IF differ by a factor of <span className="hl">14,000</span>. One
               writes sentences on a laptop from 2 MB of training data; the other cost
-              roughly $600,000 of compute and belongs to somebody else.
+              roughly $600,000 of compute to train in the first place.
             </p>
           </div>
         </div>
@@ -686,9 +686,9 @@ export default function Landing() {
             <div className="eyebrow">Everything is published</div>
             <h2>Four models. Two datasets.<br />All of it downloadable.</h2>
             <p className="lead" style={{ marginTop: 20 }}>
-              Two of these are mine end to end, one borrows GPT-2&rsquo;s fluency,
-              and one is somebody else&rsquo;s model that I only compressed. The
-              labels say which is which.
+              Two are trained here from nothing, one starts from GPT-2, and one
+              adapts SD-Turbo — re-quantized, re-decoded and rebuilt to run in a
+              browser tab. The labels say which is which.
             </p>
           </div>
           <div className="lp-rel lp-in" style={{ marginTop: 36 }}>

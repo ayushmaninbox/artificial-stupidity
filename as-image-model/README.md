@@ -303,8 +303,8 @@ Generated and never committed: `data/emoji/`, `data/emoji_src/`,
 AS-I is the from-scratch model. AS-IF is its opposite number: **SD-Turbo**,
 trained by Stability AI, compressed here so it can ship. The repo keeps both
 for the same reason the text side keeps `AS-F` next to `AS-0…AS-5` — one is
-yours and limited, one is borrowed and general, and the README should say which
-is which.
+trained here and limited, one is adapted and general, and the README should say
+which is which.
 
 SD-Turbo rather than SD 1.5 because it is adversarially distilled for **1–4
 step** sampling. Vanilla SD 1.5 needs 20–50 steps, which is unusable in a
