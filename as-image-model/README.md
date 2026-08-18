@@ -205,7 +205,6 @@ train_diffusion.py       stage 2
 recon.py                 what survives the squeeze — run before stage 2
 sample.py                text -> image
 bench.py                 exact attribute scoring
-export/push_to_hub.py    publish weights + corpus to Hugging Face
 ```
 
 Generated and never committed: `data/emoji/`, `data/emoji_src/`,
@@ -215,54 +214,62 @@ Generated and never committed: `data/emoji/`, `data/emoji_src/`,
 
 ## Where this comes from
 
-AS-I is not a reimplementation of any one of these. It borrows an idea from
-each and deviates where the objective differs — the goal here is *smallest and
-fastest*, which is not what any of them were optimising for.
-
 ### Autoregressive Image Generation using Residual Quantization
 Lee, Kim, Kim, Cho, Han — CVPR 2022 · [arXiv:2203.01941](https://arxiv.org/abs/2203.01941)
 
-The origin of the RQ-VAE idea. Its contribution: **residual** quantization lets
-a very short code sequence stay high-fidelity — 256×256 images compressed to
-8×8 positions, because each position stacks 4 codes instead of 1.
+The paper AS-I is built in reaction to. Its insight is that you can make the
+latent grid **very small** without destroying the image, provided each cell
+carries enough information — 256×256 images compressed to just 8×8 positions.
 
-- **Taken:** the target — a small latent grid really can carry an image, if each
-  cell is rich enough.
-- **Dropped:** the codebook, and the RQ-Transformer.
+It gets there with *residual* quantization. One codebook rounds each cell to
+the nearest of 16,384 entries, which loses a lot; a second codebook then
+encodes *what the first one got wrong*; a third encodes what's still wrong, and
+so on for 4 stages:
 
-The paper's stage 2 is autoregressive: 8×8×4 = 256 codes emitted *sequentially*.
-Genuinely fast next to AR models needing 1024+ tokens, but 64–256 forward passes
-against diffusion's 8, and sequential decoding is the one cost this project
-cannot pay. The codebook alone is 16,384 × 256 × 4 ≈ 16.8M parameters (~67 MB)
-— larger than all of AS-I.
+```
+  cell value ──► codebook 1 ──► code₁      error₁ = value − code₁
+                     │
+       error₁ ──► codebook 2 ──► code₂      error₂ = error₁ − code₂
+                     │
+       error₂ ──► codebook 3 ──► code₃
+                     │
+       error₃ ──► codebook 4 ──► code₄
 
-### RQ-VAE-Unet-Image-Generation-Model
-[Amineharrabi](https://github.com/Amineharrabi/RQ-VAE-Unet-Image-Generation-Model)
+  the cell is stored as (code₁, code₂, code₃, code₄)
+  — 4 numbers that reconstruct it far better than 1
+```
 
-An implementation of the paper's **stage 1 only**, plus a residual refiner. With
-no RQ-Transformer there is no prior, so it can reconstruct an image you hand it
-but cannot generate one from text. Its ~105M parameters are ~67 MB of codebook
-— which is what made the no-codebook decision concrete rather than theoretical.
+That is a genuinely good idea, and AS-I keeps the **conclusion** — a small
+latent grid is enough — while rejecting the **mechanism**, for two measured
+reasons.
 
-- **Taken:** coarse → refine staging, and the empirical size breakdown.
+**One: the codebooks are the entire size budget.**
 
-### StableDiffusion-1.5-Low-VRAM
-[Amineharrabi](https://github.com/Amineharrabi/StableDiffusion-1.5-Low-VRAM)
+```
+  4 codebooks × 16,384 codes × 256 dims  =  16.8M parameters  ≈  67 MB
+  all of AS-I                            =  ~24M parameters   ≈  24 MB int8
+```
 
-LoRA fine-tuning and quantization of a *pretrained* SD 1.5 down to ~740 MB and
-~1 GB VRAM: 4-bit UNet, 8-bit CLIP, fp16 VAE, tiled decoding, CPU offload.
+The lookup tables alone outweigh this whole project. A continuous 4-channel
+latent stores each cell as 4 plain floats and needs no table at all. It is the
+same lesson as `--emb-bits` in the text model's `compress.py`: the table, not
+the compute, is where the megabytes hide.
 
-- **Taken:** the mixed-precision policy — quantize per component, not globally,
-  because layers differ in how much damage they tolerate.
-- **Not applicable:** it starts from someone else's billion-parameter model.
-  Useful for shrinking, not for building.
+**Two: its generator is sequential.** The paper's stage 2 (RQ-Transformer)
+emits 8×8×4 = 256 codes one after another. That is fast *next to other
+autoregressive models*, which need 1024+ tokens — but it is 64–256 forward
+passes, against 8 for diffusion:
 
-### I Made The Smallest (And Dumbest) Image Generation Model
-[youtube](https://www.youtube.com/watch?v=4PEAPLvfZFM)
+```
+  RQ-Transformer   ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪ ... ▪▪▪   64–256 passes, strictly in order
+  AS-I (DDIM)      ▪▪▪▪▪▪▪▪                    8 passes, whole image at once
+```
 
-Squeezing SD 1.5 inference under 2 GB — the same "how small can this get"
-framing, approached from compression rather than architecture, and where the
-name for this half of the repo came from.
+Sequential decoding is the one cost a "minimum time" project cannot pay.
+
+> The paper's figures are worth looking at directly — they are under arXiv's
+> non-exclusive licence, so they are linked rather than copied here.
+> [Read the paper](https://arxiv.org/abs/2203.01941).
 
 ### Also standing on
 - **Latent Diffusion** (Rombach et al., 2022) — diffuse in a compressed latent,
