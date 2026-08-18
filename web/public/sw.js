@@ -18,7 +18,7 @@
  *    cache-first forever. Everything else is stale-while-revalidate.
  */
 
-const SHELL = "as-shell-v10";   // v2 cached configs it should not have
+const SHELL = "as-shell-v11";   // v10 may hold a worker that never parsed
 const MODELS = "transformers-cache";      // shared with the inference worker
 const HF = "https://huggingface.co/";
 
@@ -102,6 +102,29 @@ self.addEventListener("fetch", (e) => {
           return res;
         })
         .catch(async () => (await caches.match(request)) || caches.match("/chat")),
+    );
+    return;
+  }
+
+  /* The workers are the one same-origin asset that is both mutable and
+     unhashed, so stale-while-revalidate is wrong for them specifically: a
+     broken worker would be served from cache on the very next load, and a fix
+     would appear to do nothing. Next's /_next/static files carry a content
+     hash in the name, so they stay cache-first. */
+  const mutableScript = /\/(worker|worker-image|sw)\.js$/.test(
+    new URL(request.url).pathname,
+  );
+  if (mutableScript) {
+    e.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res.status === 200) {
+            const copy = res.clone();
+            caches.open(SHELL).then((c) => c.put(request, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(request)),   // offline: last known good
     );
     return;
   }

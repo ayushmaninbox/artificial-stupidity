@@ -34,8 +34,9 @@ const AS_F_FILES = [
 const AS_IF_FILES = [
   `${AS_IF}/tiny-sd/text_encoder/model.onnx`,
   `${AS_IF}/tiny-sd/unet/model.onnx`,
-  `${AS_IF}/tiny-sd/vae_decoder_tiny/model.onnx`,
-  `${AS_IF}/tiny-sd/vae_decoder_tiny/model.onnx.data`,
+  // must match DECODER_REV in public/worker-image.js, or the warm copy lands
+  // under a different cache key and the worker downloads it a second time
+  `${AS_IF}/tiny-sd/vae_decoder_tiny/model.onnx?v=2`,
   `${AS_IF}/tokenizer.json`,
 ];
 

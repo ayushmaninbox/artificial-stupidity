@@ -308,6 +308,14 @@ async function runImage(id, prompt, onStep) {
    transformers.js supplies it while the graphs run on bare onnxruntime.      */
 
 
+/* The tiny decoder first shipped with its weights in a sidecar model.onnx.data.
+   A browser has no filesystem to mount that from, so ONNX Runtime aborted with
+   "Module.MountedFiles is not available" — after the 325 MB UNet had already
+   loaded fine. The copy on HF is self-contained now, but Cache Storage keys on
+   the full URL, so anyone holding the old 221 KB graph would keep loading it.
+   The suffix is a fresh key for that one file; the UNet stays cached. */
+const DECODER_REV = "?v=2";
+
 async function loadSD() {
   if (sdCache) return sdCache;
 
@@ -353,7 +361,7 @@ async function loadSD() {
   const tB = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
   const text = await ort.InferenceSession.create(tB, light);
 
-  const dB = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
+  const dB = await ensureCached(`${b}/vae_decoder_tiny/model.onnx${DECODER_REV}`, "AS-IF", bump);
   const dec = await ort.InferenceSession.create(dB, light);
 
   sdCache = { cfg, tok, text, unet, dec };
