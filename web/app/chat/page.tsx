@@ -44,6 +44,7 @@ export default function Page() {
      would just teach people the wrong thing to type. */
   const [cues, setCues] = useState<string[]>([]);
   const [backend, setBackend] = useState<string | null>(null);
+  const [caps, setCaps] = useState<any>(null);
   useEffect(() => { setCues(suggestions(model, 4)); }, [model]);
   /** Models already in worker memory — switching back to one is instant. */
   const [resident, setResident] = useState<Set<string>>(() => new Set());
@@ -71,6 +72,7 @@ export default function Page() {
       setPhase((cur) => {
         if (cur !== "cold") return cur;
         setDownloads((d) => ({ ...d, "AS-F": { loaded: 0, total: 0 } }));
+        worker.current?.postMessage({ type: "caps" });
         worker.current?.postMessage({ type: "load", model: "AS-F" });
         return "loading";
       });
@@ -178,6 +180,11 @@ export default function Page() {
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
+      } else if (m.type === "caps") {
+        // one line, in the console, so a capability question is answerable
+        // without another round of guessing
+        console.info("[AS] browser capabilities", m.caps);
+        setCaps(m.caps);
       } else if (m.type === "backend") {
         setBackend(m.backend);
       } else if (m.type === "step") {

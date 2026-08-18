@@ -102,6 +102,8 @@ async function SESSION_OPTS(heavy = false) {
  */
 function describe(err) {
   const raw = err instanceof Error ? err.message : String(err);
+  // our own pre-flight message is already the explanation
+  if (raw.startsWith("AS-IF needs about")) return raw;
   const n = Number(raw);
   if (Number.isFinite(n) && n > 1e8) {
     const gb = (n / 1e9).toFixed(2);
@@ -113,6 +115,37 @@ function describe(err) {
     return `Ran out of memory loading the model. Try a smaller one.`;
   }
   return raw;
+}
+
+/**
+ * Report what this browser can actually offer, before committing to a 454 MB
+ * download. Guessing at the ceiling has cost several rounds; measuring it once
+ * and saying so plainly is cheaper than another theory.
+ */
+async function capabilities() {
+  const ort = await getOrt();
+  const gpu = await hasWebGPU();
+  let heapMB = null;
+  try {
+    // grow a scratch buffer until it refuses — tells us the real ceiling
+    const probe = new WebAssembly.Memory({ initial: 1, maximum: 65536 });
+    let pages = 1;
+    for (const target of [4096, 8192, 16384, 32768, 49152]) {   // 256MB..3GB
+      try { probe.grow(target - pages); pages = target; } catch { break; }
+    }
+    heapMB = Math.round((pages * 65536) / 1e6);
+  } catch { /* probing is best effort */ }
+
+  return {
+    webgpu: gpu,
+    crossOriginIsolated: self.crossOriginIsolated === true,
+    sharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
+    wasmThreads: ort?.env?.wasm?.numThreads ?? null,
+    wasmSimd: ort?.env?.wasm?.simd ?? null,
+    maxWasmHeapMB: heapMB,
+    deviceMemoryGB: navigator.deviceMemory ?? null,
+    cores: navigator.hardwareConcurrency ?? null,
+  };
 }
 
 let _ort = null;
@@ -578,9 +611,24 @@ async function runImage(id, prompt, onStep) {
 const SD_REPO = "ayushmaninbox/artificial-stupidity-asif";
 const SD_BASE = `https://huggingface.co/${SD_REPO}/resolve/main`;
 
+/* Roughly what the tiny-sd build needs resident: 325 MB of weights, plus the
+   graph and activations for a 64x64x4 latent at batch 2. Measured peaks landed
+   near 700 MB, so anything under that will fail — and failing AFTER a 454 MB
+   download is a worse experience than not starting. */
+const SD_NEEDS_MB = 700;
+
 async function loadSD() {
   if (sdCache) return sdCache;
   const ort = await getOrt();
+
+  const caps = await capabilities();
+  if (!caps.webgpu && caps.maxWasmHeapMB !== null && caps.maxWasmHeapMB < SD_NEEDS_MB) {
+    throw new Error(
+      `AS-IF needs about ${SD_NEEDS_MB} MB of memory and this browser allows ` +
+      `roughly ${caps.maxWasmHeapMB} MB per tab without WebGPU. ` +
+      `Enable WebGPU, or use AS-I — it is 17 MB and runs anywhere.`,
+    );
+  }
   // no-store: this config decides WHICH build loads, so a stale copy sends the
   // browser after a model that cannot run
   const cfg = await (
@@ -848,6 +896,8 @@ self.addEventListener("message", async (e) => {
       }
     } else if (e.data.type === "ask") {
       await ask(e.data.text, e.data.temperature, e.data.model);
+    } else if (e.data.type === "caps") {
+      self.postMessage({ type: "caps", caps: await capabilities() });
     }
   } catch (err) {
     self.postMessage({
