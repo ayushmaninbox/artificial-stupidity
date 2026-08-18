@@ -29,6 +29,7 @@ export default function Page() {
   const [convos, setConvos] = useState<Convo[]>([]);
   const [convoId, setConvoId] = useState<string>(() => newId());
   const [rail, setRail] = useState(false);      // sidebar open on mobile
+  const [collapsed, setCollapsed] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** The model the picker is currently fetching, with its byte progress. */
   const [preparing, setPreparing] = useState<{ id: ModelId; loaded: number; total: number } | null>(null);
@@ -241,9 +242,27 @@ export default function Page() {
   const busy = phase === "generating" || pending;
 
   return (
-    <div className={`app${rail ? " rail-open" : ""}`}>
+    <div className={`app${rail ? " rail-open" : ""}${collapsed ? " rail-collapsed" : ""}`}>
       {/* ------------------------------------------------- conversations rail */}
       <aside className="rail" aria-label="Conversations">
+        <div className="rail-brand">
+          <Link href="/" className="rail-home">
+            <img src="/as-f.png" alt="" />
+            <span>Artificial Stupidity</span>
+          </Link>
+          <button
+            className="rail-collapse"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand" : "Collapse"}
+          >
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
+              <rect x="1.6" y="2.6" width="11.8" height="9.8" rx="2"
+                    stroke="currentColor" strokeWidth="1.2" fill="none" />
+              <path d="M5.8 2.6v9.8" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+          </button>
+        </div>
         <div className="rail-top">
           <button
             className="rail-new"
@@ -310,13 +329,18 @@ export default function Page() {
       <div className="main">
       <header className="top">
         <div className="top-in">
-          <Link href="/" className="home" aria-label="Back to the overview">
-            <img className="logo" src="/as-f.png" alt="" />
-          </Link>
+          <button
+            className="rail-show"
+            onClick={() => (collapsed ? setCollapsed(false) : setRail(true))}
+            aria-label="Show conversations"
+          >
+            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
+              <path d="M2 3.8h11M2 7.5h11M2 11.2h7" stroke="currentColor"
+                    strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            </svg>
+          </button>
           <div className="head-mid">
-            <div className="title">
-              <Link href="/">Artificial Stupidity</Link>
-            </div>
+            <div className="title">{byId(model).id}</div>
           </div>
         </div>
         {/* One thin line under the header, and it disappears for good once the
@@ -388,11 +412,21 @@ export default function Page() {
             ) : (
               <div key={i} className="turn bot">
                 <img className="face" src="/as-f.png" alt="" />
-                <div className="say">
+                <div className={`say${!t.text && phase === "generating" ? " pending" : ""}`}>
                   <span className="who">{model}</span>
-                  {t.text}
-                  {phase === "generating" && i === turns.length - 1 && (
-                    <span className="tick" aria-hidden />
+                  {!t.text && phase === "generating" ? (
+                    <span aria-label="thinking">
+                      <span className="skel skel-line skel-w1" />
+                      <span className="skel skel-line skel-w2" />
+                      <span className="skel skel-line skel-w3" />
+                    </span>
+                  ) : (
+                    <>
+                      {t.text}
+                      {phase === "generating" && i === turns.length - 1 && (
+                        <span className="tick" aria-hidden />
+                      )}
+                    </>
                   )}
                 </div>
               </div>

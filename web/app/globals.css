@@ -542,3 +542,89 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pick-bar i.idle { animation: none; width: 100%; opacity: 0.4; }
 }
+
+/* ================================ rail brand, collapse, loading states ==
+
+   The logo and wordmark live at the top of the rail rather than in the
+   header, so the product name sits in the same corner it does in every other
+   chat tool and the header is left to say only what is happening right now.  */
+
+.rail-brand {
+  display: flex; align-items: center; gap: 6px; padding: 2px 2px 12px;
+}
+.rail-home {
+  display: flex; align-items: center; gap: 9px; min-width: 0;
+  text-decoration: none; color: var(--ink); font-weight: 550; font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.rail-home img { width: 24px; height: 24px; border-radius: 6px; flex: none; }
+.rail-home span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.rail-collapse, .rail-show {
+  margin-left: auto; display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 7px; flex: none;
+  background: none; border: 1px solid transparent; color: var(--ink-3);
+  cursor: pointer; transition: color 0.16s ease, border-color 0.16s ease;
+}
+.rail-collapse:hover, .rail-show:hover { color: var(--ink); border-color: var(--line); }
+
+.rail-show { display: none; margin-left: 0; }
+.app.rail-collapsed .rail { display: none; }
+.app.rail-collapsed { grid-template-columns: 1fr; }
+.app.rail-collapsed .rail-show { display: grid; }
+
+/* --------------------------------------------------------- skeletons */
+
+@keyframes shimmer {
+  0%   { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.skel {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--panel-2) 25%, var(--line) 37%, var(--panel-2) 63%);
+  background-size: 220% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.skel-line { height: 11px; margin: 7px 0; }
+.skel-w1 { width: 92%; } .skel-w2 { width: 74%; } .skel-w3 { width: 58%; }
+
+/* the reply that is still arriving gets a shimmering placeholder, not a
+   blank bubble that reads as a stalled request */
+.turn.bot .say.pending { min-height: 20px; }
+
+/* ------------------------------------------------------ status pill */
+
+.state .led.busy { animation: pulse 1.15s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.82); }
+}
+
+/* messages slide in rather than snapping */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.turn { animation: rise 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.turn.note { animation-duration: 0.35s; }
+
+/* the composer grows with its content and never sits under the picker */
+.box textarea {
+  width: 100%; resize: none; overflow-y: auto;
+  max-height: 168px; line-height: 1.55;
+  padding: 13px 46px 44px 14px;   /* right clears send, bottom clears picker */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+  .turn { animation: none; }
+  .state .led.busy { animation: none; }
+}
+
+@media (max-width: 860px) {
+  .rail-show { display: grid; }
+  .app.rail-collapsed .rail { display: flex; }
+}
+
+/* skeleton lines stack as blocks inside the reply */
+.say .skel-line { display: block; }
