@@ -43,6 +43,10 @@
 .lp-narrow { max-width: 780px; margin: 0 auto; padding: 0 28px; }
 
 .lp section { position: relative; }
+
+/* Nav links jump to sections, so scrolling has to be smooth and the target has
+   to clear the sticky header — otherwise the heading lands underneath it. */
+.lp section[id] { scroll-margin-top: 74px; }
 .lp-sec { padding: 68px 0; }
 .lp-sec-tight { padding: 40px 0; }
 
@@ -461,3 +465,8 @@
 .lp { scrollbar-color: var(--d-line) transparent; }
 .lp ::-webkit-scrollbar-thumb { background: var(--d-line); background-clip: content-box; }
 .lp ::-webkit-scrollbar-thumb:hover { background: var(--d-ink-3); background-clip: content-box; }
+
+/* honour the OS setting rather than forcing motion on everyone */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

@@ -70,13 +70,27 @@ export default async function OG() {
 
         <div
           style={{
-            display: "flex", gap: 76, borderTop: "1px solid #1f2325", paddingTop: 26,
+            display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+            gap: 40, borderTop: "1px solid #1f2325", paddingTop: 26,
           }}
         >
-          {stat("83 KB", "smallest model") as any}
-          {stat("14 MB", "text to image") as any}
-          {stat("0%", "factual accuracy") as any}
-          {stat("100%", "confidence") as any}
+          <div style={{ display: "flex", gap: 62 }}>
+            {stat("83 KB", "smallest model") as any}
+            {stat("14 MB", "text to image") as any}
+            {stat("0%", "factual accuracy") as any}
+          </div>
+          {/* a card with no call to action is a poster; this one asks for the
+              click it is competing for in a feed */}
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 12,
+              background: "#74b892", color: "#06130c",
+              padding: "16px 28px", borderRadius: 12,
+              fontSize: 27, fontWeight: 600, letterSpacing: "-0.01em",
+            }}
+          >
+            Try it in your browser →
+          </div>
         </div>
       </div>
     ),

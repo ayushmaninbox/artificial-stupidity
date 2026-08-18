@@ -6,12 +6,16 @@ const SITE = "https://artificial-stupidity.vercel.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
+  /* Lengths are deliberate: titles are cut around 60 characters in search
+     results, meta descriptions around 155, and social cards truncate their
+     description near 125 — especially on mobile. Anything past those is
+     written for nobody. */
   title: {
-    default: "Artificial Stupidity — fluent, confident, wrong about everything",
+    default: "Artificial Stupidity — confidently wrong AI",
     template: "%s · Artificial Stupidity",
   },
   description:
-    "A language model that speaks perfect English and knows nothing, plus a 14 MB text-to-image model. Every weight trained from scratch on a laptop. Runs entirely in your browser.",
+    "Four AI models trained from scratch on one laptop and running in your browser. A language model wrong on purpose, plus a 14 MB text-to-image model.",
   keywords: [
     "small language model", "1-bit quantization", "BitNet", "tiny diffusion",
     "text to image", "on-device inference", "WebGPU", "transformers.js",
@@ -24,15 +28,17 @@ export const metadata: Metadata = {
     siteName: "Artificial Stupidity",
     title: "Fluent. Confident. Wrong about everything.",
     description:
-      "Four AI models trained on one laptop — a language model that is wrong on purpose, and a text-to-image model the size of a photograph.",
-    images: [{ url: "/as-f.png", width: 512, height: 512, alt: "Artificial Stupidity" }],
+      "Four AI models trained on one laptop. Runs in your browser — nothing you type ever leaves your device.",
+    locale: "en_GB",
   },
   twitter: {
     card: "summary_large_image",
     title: "Fluent. Confident. Wrong about everything.",
     description: "Four AI models trained on one laptop. Runs in your browser.",
-    images: ["/as-f.png"],
   },
+  applicationName: "Artificial Stupidity",
+  appleWebApp: { capable: true, title: "Artificial Stupidity", statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
   robots: { index: true, follow: true },
   alternates: { canonical: SITE },
 };
