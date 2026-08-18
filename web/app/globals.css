@@ -702,3 +702,84 @@ body {
 /* the composer is short enough that a bar inside it is pure noise */
 .box textarea::-webkit-scrollbar { width: 6px; }
 .box textarea::-webkit-scrollbar-thumb { border-width: 2px; }
+
+
+/* ==================================================== generated images ==
+
+   The wait is ~1-2 seconds, which is long enough that a blank box reads as a
+   stall and short enough that a spinner feels heavy. So the placeholder is the
+   shape and size of the image that is coming: a square that visibly resolves,
+   with a fill that tracks the actual denoising step rather than looping on a
+   timer. The finished picture then fades in on top of it, so the layout never
+   jumps.                                                                     */
+
+.shot {
+  position: relative; display: block; overflow: hidden;
+  width: 100%; max-width: 288px; aspect-ratio: 1;
+  margin-top: 8px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--panel-2);
+  isolation: isolate;
+}
+
+/* drifting colour fog — the latent before it means anything */
+.shot-noise {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 28% 30%, rgba(116, 184, 146, 0.30), transparent 46%),
+    radial-gradient(circle at 74% 68%, rgba(116, 184, 146, 0.18), transparent 44%),
+    radial-gradient(circle at 55% 85%, rgba(217, 118, 93, 0.14), transparent 42%);
+  background-size: 150% 150%, 140% 140%, 130% 130%;
+  animation: shot-drift 4.5s ease-in-out infinite alternate;
+  filter: blur(9px);
+}
+@keyframes shot-drift {
+  0%   { background-position:   0% 0%,  100% 100%, 50% 100%; }
+  100% { background-position: 100% 60%,   0%  20%, 20%   0%; }
+}
+
+/* a lattice that reads as the 16x16 latent grid, sweeping through */
+.shot-sweep {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(115deg, transparent 38%, rgba(255,255,255,0.10) 50%, transparent 62%);
+  background-size: 18px 18px, 18px 18px, 240% 240%;
+  animation: shot-sweep 1.9s linear infinite;
+}
+@keyframes shot-sweep {
+  0%   { background-position: 0 0, 0 0, 120% 0; }
+  100% { background-position: 0 0, 0 0, -40% 0; }
+}
+
+/* real progress: rises from the bottom in step with the sampler */
+.shot-fill {
+  position: absolute; inset: 0; transform-origin: 50% 100%;
+  transform: scaleY(0);
+  background: linear-gradient(to top, rgba(116,184,146,0.22), rgba(116,184,146,0.04));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* the finished image lands on top of its own placeholder */
+.drawn {
+  position: absolute; inset: 0; display: block;
+  width: 100%; height: 100%; z-index: 2;
+  image-rendering: pixelated;          /* 64px upscaled — keep it crisp */
+  animation: shot-reveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes shot-reveal {
+  from { opacity: 0; transform: scale(1.03); filter: blur(6px); }
+  to   { opacity: 1; transform: none;        filter: none; }
+}
+
+.drawing { display: block; }
+.drawing em {
+  display: block; margin-top: 9px; font-style: normal;
+  font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-noise, .shot-sweep { animation: none; }
+  .shot-fill { transition: none; }
+  .drawn { animation: none; }
+}

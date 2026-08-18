@@ -84,8 +84,13 @@ const MODEL_REVISION = "v1";
 const TINY_REPO = "ayushmaninbox/artificial-stupidity-tiny";
 const TINY_BASE = `https://huggingface.co/${TINY_REPO}/resolve/main/onnx`;
 
+const IMG_REPO = "ayushmaninbox/artificial-stupidity-image";
+const IMG_BASE = `https://huggingface.co/${IMG_REPO}/resolve/main/web`;
+
 const MODELS = {
   "AS-F":  { kind: "gpt2", label: "AS-F",  bytes: 164_000_000 },
+  "AS-I":     { kind: "image", label: "AS-I",     bytes: 17_000_000 },
+  "AS-I-300": { kind: "image", label: "AS-I-300", bytes: 17_000_000 },
   "AS-0":  { kind: "char", label: "AS-0",  bytes: 3_520_000 },
   "AS-1":  { kind: "char", label: "AS-1",  bytes: 3_840_000 },
   "AS-2":  { kind: "char", label: "AS-2",  bytes: 3_840_000 },
@@ -97,6 +102,7 @@ const MODELS = {
 let current = "AS-F";
 const charCache = new Map();   // id -> { session, chars, stoi, block }
 let charTok = null;
+const imgCache = new Map();    // id -> { text, unet, dec, cfg, stoi }
 
 let generator = null;
 
@@ -211,6 +217,160 @@ async function runChar(id, text, temperature, onPiece) {
   return out;
 }
 
+/* =========================================================== image models
+
+   AS-I is a latent diffusion model, so the browser has to run the sampler
+   itself: transformers.js has no idea what any of this is. Three graphs —
+   text encoder, U-Net, VAE decoder — plus the loop below, which is a direct
+   port of diffusion.py's DDIM.
+
+   The alpha/sigma tables are baked into model.json at export time rather than
+   recomputed here. Two implementations of the same cosine schedule is two
+   chances to be subtly, invisibly wrong.                                    */
+
+const PAD = 0, BOS = 1, UNK = 2;
+
+/** Box–Muller: ORT has no Gaussian, and a uniform init produces noise. */
+function randn(n, rand) {
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i += 2) {
+    const u = Math.max(rand(), 1e-9), v = rand();
+    const r = Math.sqrt(-2 * Math.log(u));
+    out[i] = r * Math.cos(2 * Math.PI * v);
+    if (i + 1 < n) out[i + 1] = r * Math.sin(2 * Math.PI * v);
+  }
+  return out;
+}
+
+async function fetchBytes(url, id, onBytes) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url.split("/").pop()} ${res.status}`);
+  const total = Number(res.headers.get("content-length")) || 0;
+  const reader = res.body.getReader();
+  const parts = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    got += value.length;
+    onBytes(value.length, total);
+  }
+  const buf = new Uint8Array(got);
+  let at = 0;
+  for (const p of parts) { buf.set(p, at); at += p.length; }
+  return buf;
+}
+
+async function loadImage(id) {
+  if (imgCache.has(id)) return imgCache.get(id);
+  const base = `${IMG_BASE}/${id}`;
+
+  const cfg = await (await fetch(`${base}/model.json`)).json();
+  // one bar across all three graphs, so it does not reset twice mid-download
+  const APPROX = 17_000_000;
+  let seen = 0;
+  const bump = (n) => {
+    seen += n;
+    self.postMessage({ type: "progress", model: id, file: id, loaded: seen, total: APPROX });
+  };
+
+  const [tb, ub, db] = [
+    await fetchBytes(`${base}/text.onnx`, id, bump),
+    await fetchBytes(`${base}/unet.onnx`, id, bump),
+    await fetchBytes(`${base}/decoder.onnx`, id, bump),
+  ];
+  const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+  const entry = {
+    cfg,
+    stoi: new Map(cfg.vocab.map((w, i) => [w, i])),
+    text: await ort.InferenceSession.create(tb, opt),
+    unet: await ort.InferenceSession.create(ub, opt),
+    dec: await ort.InferenceSession.create(db, opt),
+  };
+  imgCache.set(id, entry);
+  return entry;
+}
+
+/** Draw one image. Mirrors the reference loop in diffusion.py exactly. */
+async function runImage(id, prompt, onStep) {
+  const { cfg, stoi, text, unet, dec } = await loadImage(id);
+  const T = cfg.maxTokens, L = cfg.latent, C = cfg.latentCh, G = cfg.guidance;
+
+  const encode = (str) => {
+    const ids = [BOS];
+    for (const w of str.toLowerCase().split(/\s+/).filter(Boolean)) {
+      ids.push(stoi.has(w) ? stoi.get(w) : UNK);
+    }
+    const cut = ids.slice(0, T);
+    while (cut.length < T) cut.push(PAD);
+    return BigInt64Array.from(cut.map(BigInt));
+  };
+  const runText = async (str) =>
+    text.run({ ids: new ort.Tensor("int64", encode(str), [1, T]) });
+
+  // The text graph was traced at batch 1 and its reshape does not generalise,
+  // so it is called twice and the results concatenated by hand.
+  const a = await runText(prompt);
+  const b = await runText("");
+  const cd = a.ctx.dims[2];
+  const ctx = new Float32Array(2 * T * cd);
+  ctx.set(a.ctx.data, 0);
+  ctx.set(b.ctx.data, T * cd);
+  const pad = new BigInt64Array(2 * T);
+  pad.set(a.pad.data, 0);
+  pad.set(b.pad.data, T);
+  const ctxT = new ort.Tensor("float32", ctx, [2, T, cd]);
+  const padT = new ort.Tensor("int64", pad, [2, T]);
+
+  const n = C * L * L;
+  let z = randn(n, Math.random);
+  const both = new Float32Array(n * 2);
+
+  for (let i = 0; i < cfg.steps; i++) {
+    both.set(z, 0); both.set(z, n);              // batch 2: cond + uncond
+    const t = BigInt64Array.from([BigInt(cfg.schedule[i]), BigInt(cfg.schedule[i])]);
+    const { v } = await unet.run({
+      z: new ort.Tensor("float32", both, [2, C, L, L]),
+      t: new ort.Tensor("int64", t, [2]),
+      ctx: ctxT,
+      pad: padT,
+    });
+
+    const A = cfg.alpha[i], S = cfg.sigma[i];
+    const An = cfg.alpha[i + 1], Sn = cfg.sigma[i + 1];
+    const next = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      // classifier-free guidance, then v -> x0 -> eps -> next latent
+      const vv = v.data[n + k] + G * (v.data[k] - v.data[n + k]);
+      let x0 = A * z[k] - S * vv;
+      x0 = x0 < -3 ? -3 : x0 > 3 ? 3 : x0;
+      const eps = (z[k] - A * x0) / Math.max(S, 1e-8);
+      next[k] = An * x0 + Sn * eps;
+    }
+    z = next;
+    onStep(i + 1, cfg.steps);
+  }
+
+  const scaled = new Float32Array(n);
+  for (let k = 0; k < n; k++) scaled[k] = z[k] / cfg.scale;
+  const { image } = await dec.run({
+    z: new ort.Tensor("float32", scaled, [1, C, L, L]),
+  });
+
+  // CHW float in [-1,1] -> RGBA bytes the page can blit straight to a canvas
+  const S2 = cfg.imageSize, px = S2 * S2;
+  const rgba = new Uint8ClampedArray(px * 4);
+  for (let k = 0; k < px; k++) {
+    for (let c = 0; c < 3; c++) {
+      const val = image.data[c * px + k];
+      rgba[k * 4 + c] = Math.round((Math.min(1, Math.max(-1, val)) + 1) * 127.5);
+    }
+    rgba[k * 4 + 3] = 255;
+  }
+  return { rgba, size: S2 };
+}
+
 async function load() {
   if (generator) return generator;
 
@@ -276,6 +436,17 @@ async function ask(text, temperature, model) {
   /* The character models are a different architecture with a different
      tokenizer, so they get their own loop — but the page sees the identical
      progress / token / done sequence either way. */
+  if (MODELS[id].kind === "image") {
+    const { rgba, size } = await runImage(id, text, (step, total) =>
+      self.postMessage({ type: "step", step, total }),
+    );
+    // transfer the buffer rather than copying it — it is 64x64x4 today but
+    // this is the path a larger model would use too
+    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
+    self.postMessage({ type: "done" });
+    return;
+  }
+
   if (MODELS[id].kind === "char") {
     let full = "";
     await runChar(id, text, temperature, (piece) => {
@@ -325,7 +496,18 @@ self.addEventListener("message", async (e) => {
   try {
     if (e.data.type === "load") {
       const id = MODELS[e.data.model] ? e.data.model : "AS-F";
-      if (MODELS[id].kind === "char") {
+      if (MODELS[id].kind === "image") {
+    const { rgba, size } = await runImage(id, text, (step, total) =>
+      self.postMessage({ type: "step", step, total }),
+    );
+    // transfer the buffer rather than copying it — it is 64x64x4 today but
+    // this is the path a larger model would use too
+    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
+    self.postMessage({ type: "done" });
+    return;
+  }
+
+  if (MODELS[id].kind === "char") {
         // loadChar streams and reports its own progress; once the session
         // exists the model is genuinely ready to answer
         await loadChar(id);

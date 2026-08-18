@@ -23,8 +23,8 @@ export const MODELS: ModelInfo[] = [
   { id: "AS-3",  family: "text", ready: true,  size: "3.8 MB", blurb: "Ternary · −1, 0, +1" },
   { id: "AS-4",  family: "text", ready: true,  size: "3.8 MB", blurb: "1-bit · packs to 169 KB" },
   { id: "AS-5",  family: "text", ready: true,  size: "2.0 MB", blurb: "1-bit, smaller brain · packs to 83 KB" },
-  { id: "AS-I",     family: "image", ready: false, size: "14 MB",  blurb: "Text-to-image, from scratch · 1,254 emoji" },
-  { id: "AS-I-300", family: "image", ready: false, size: "14 MB",  blurb: "Same model, 300 glyphs · sharper" },
+  { id: "AS-I",     family: "image", ready: true,  size: "17 MB",  blurb: "Text-to-image, from scratch · 1,254 emoji" },
+  { id: "AS-I-300", family: "image", ready: true,  size: "17 MB",  blurb: "Same model, 300 glyphs · sharper" },
   { id: "AS-IF",    family: "image", ready: false, size: "1.2 GB", blurb: "Quantized SD-Turbo · draws anything" },
 ];
 

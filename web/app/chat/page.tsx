@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MODELS, byId, type ModelId } from "../models";
 import { loadConvos, saveConvos, titleFor, newId, type Convo } from "../history";
 
-type Turn = { who: "user" | "bot" | "note"; text: string };
+type Turn = { who: "user" | "bot" | "note"; text: string; image?: string };
 type Phase = "cold" | "loading" | "ready" | "generating";
 
 const CUES = [
@@ -27,12 +27,16 @@ export default function Page() {
   const [model, setModel] = useState<ModelId>("AS-F");
   const [picker, setPicker] = useState(false);
   const [convos, setConvos] = useState<Convo[]>([]);
+  /* Text and image models share one thread. Each reply is tagged by the note
+     turns written on every switch, so a saved conversation still reads
+     correctly even though `convo.model` only records the last one used. */
   const [convoId, setConvoId] = useState<string>(() => newId());
   const [rail, setRail] = useState(false);      // sidebar open on mobile
   const [collapsed, setCollapsed] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   /** The model the picker is currently fetching, with its byte progress. */
   const [preparing, setPreparing] = useState<{ id: ModelId; loaded: number; total: number } | null>(null);
+  const [step, setStep] = useState<{ at: number; of: number } | null>(null);
   /** Models already in worker memory — switching back to one is instant. */
   const [resident, setResident] = useState<Set<string>>(() => new Set());
 
@@ -149,6 +153,20 @@ export default function Page() {
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
+      } else if (m.type === "step") {
+        setStep({ at: m.step, of: m.total });
+      } else if (m.type === "image") {
+        // paint the raw pixels once, keep the PNG so history can replay it
+        const cv = document.createElement("canvas");
+        cv.width = m.width; cv.height = m.height;
+        cv.getContext("2d")!.putImageData(new ImageData(m.rgba, m.width, m.height), 0, 0);
+        const url = cv.toDataURL("image/png");
+        setTurns((list) => {
+          const next = [...list];
+          next[next.length - 1] = { who: "bot", text: "", image: url };
+          return next;
+        });
+        setStep(null);
       } else if (m.type === "token") {
         setTurns((list) => {
           const next = [...list];
@@ -160,7 +178,7 @@ export default function Page() {
         setTurns((list) => {
           const next = [...list];
           const last = next[next.length - 1];
-          if (last?.who === "bot" && !last.text.trim()) {
+          if (last?.who === "bot" && !last.text.trim() && !last.image) {
             last.text = "I have nothing for you.";
           }
           return next;
@@ -412,14 +430,36 @@ export default function Page() {
             ) : (
               <div key={i} className="turn bot">
                 <img className="face" src="/as-f.png" alt="" />
-                <div className={`say${!t.text && phase === "generating" ? " pending" : ""}`}>
+                <div className={`say${!t.text && !t.image && phase === "generating" ? " pending" : ""}`}>
                   <span className="who">{model}</span>
-                  {!t.text && phase === "generating" ? (
-                    <span aria-label="thinking">
-                      <span className="skel skel-line skel-w1" />
-                      <span className="skel skel-line skel-w2" />
-                      <span className="skel skel-line skel-w3" />
+                  {t.image ? (
+                    <span className="shot">
+                      <span className="shot-noise" aria-hidden />
+                      <img className="drawn" src={t.image} alt="Generated image" />
                     </span>
+                  ) : !t.text && phase === "generating" ? (
+                    byId(model).family === "image" ? (
+                      <span className="drawing" aria-label="drawing an image">
+                        <span className="shot">
+                          <span className="shot-noise" aria-hidden />
+                          <span className="shot-sweep" aria-hidden />
+                          <span
+                            className="shot-fill"
+                            aria-hidden
+                            style={step ? { transform: `scaleY(${step.at / step.of})` } : undefined}
+                          />
+                        </span>
+                        <em>
+                          {step ? `denoising · step ${step.at} of ${step.of}` : "starting"}
+                        </em>
+                      </span>
+                    ) : (
+                      <span aria-label="thinking">
+                        <span className="skel skel-line skel-w1" />
+                        <span className="skel skel-line skel-w2" />
+                        <span className="skel skel-line skel-w3" />
+                      </span>
+                    )
                   ) : (
                     <>
                       {t.text}
