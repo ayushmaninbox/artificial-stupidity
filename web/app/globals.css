@@ -836,3 +836,19 @@ body {
   font-size: 11.5px; color: var(--ink-3); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch;
 }
+
+/* suggestions header, with a reshuffle for the other hundred thousand */
+.cue-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin: 26px 0 10px;
+}
+.cue-head span {
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-3); font-family: var(--mono);
+}
+.reshuffle {
+  background: none; border: 0; color: var(--ink-3); cursor: pointer;
+  font: inherit; font-size: 11.5px; font-family: var(--mono);
+  padding: 2px 4px; border-radius: 5px;
+}
+.reshuffle:hover { color: var(--accent); }

@@ -136,7 +136,7 @@ const MODELS = {
   "AS-F":  { kind: "gpt2", label: "AS-F",  bytes: 164_000_000 },
   "AS-I":     { kind: "image", label: "AS-I",     bytes: 17_000_000 },
   "AS-I-300": { kind: "image", label: "AS-I-300", bytes: 17_000_000 },
-  "AS-IF":    { kind: "sd",    label: "AS-IF",    bytes: 1_216_000_000 },
+  "AS-IF":    { kind: "sd",    label: "AS-IF",    bytes: 454_000_000 },
   "AS-0":  { kind: "char", label: "AS-0",  bytes: 3_520_000 },
   "AS-1":  { kind: "char", label: "AS-1",  bytes: 3_840_000 },
   "AS-2":  { kind: "char", label: "AS-2",  bytes: 3_840_000 },
@@ -508,7 +508,7 @@ async function loadSD() {
   const ort = await getOrt();
   const cfg = await (await fetch(`${SD_BASE}/web/model.json`)).json();
 
-  const APPROX = 1_216_000_000;
+  const APPROX = 454_000_000;
   let seen = 0;
   const bump = (n) => {
     seen += n;
@@ -524,7 +524,7 @@ async function loadSD() {
   );
   const tok = await AutoTokenizer.from_pretrained(SD_REPO);
 
-  const b = `${SD_BASE}/sd-turbo`;
+  const b = `${SD_BASE}/${cfg.dir ?? "tiny-sd"}`;
   const [tb, ub, db] = [
     await fetchBytes(`${b}/text_encoder/model.onnx`, "AS-IF", bump),
     await fetchBytes(`${b}/unet/model.onnx`, "AS-IF", bump),
@@ -543,13 +543,23 @@ async function loadSD() {
 async function runSD(prompt, onStep) {
   const ort = await getOrt();
   const { cfg, tok, text, unet, dec } = await loadSD();
-  const enc = await tok(prompt, {
-    padding: "max_length", max_length: cfg.maxTokens, truncation: true,
-  });
-  const ids = BigInt64Array.from(Array.from(enc.input_ids.data, (v) => BigInt(v)));
-  const { last_hidden_state: emb } = await text.run({
-    input_ids: new ort.Tensor("int64", ids, [1, cfg.maxTokens]),
-  });
+  const embed = async (str) => {
+    const enc = await tok(str, {
+      padding: "max_length", max_length: cfg.maxTokens, truncation: true,
+    });
+    const ids = BigInt64Array.from(Array.from(enc.input_ids.data, (v) => BigInt(v)));
+    const out = await text.run({
+      input_ids: new ort.Tensor("int64", ids, [1, cfg.maxTokens]),
+    });
+    return out.last_hidden_state ?? Object.values(out)[0];
+  };
+  const cond = await embed(prompt);
+  const uncond = await embed("");
+  const cd = cond.dims[2];
+  const ctxData = new Float32Array(2 * cfg.maxTokens * cd);
+  ctxData.set(cond.data, 0);
+  ctxData.set(uncond.data, cfg.maxTokens * cd);
+  const emb = new ort.Tensor("float32", ctxData, [2, cfg.maxTokens, cd]);
 
   const L = cfg.latent, C = cfg.latentCh;
   const n = C * L * L;
@@ -562,17 +572,24 @@ async function runSD(prompt, onStep) {
     const inp = new Float32Array(n);
     for (let k = 0; k < n; k++) inp[k] = lat[k] / div;
 
+    const both = new Float32Array(n * 2);
+    both.set(inp, 0); both.set(inp, n);
     const out = await unet.run({
-      sample: new ort.Tensor("float32", inp, [1, C, L, L]),
+      sample: new ort.Tensor("float32", both, [2, C, L, L]),
       // timestep is a SCALAR here — shape [1] fails inside time_proj
       timestep: new ort.Tensor("float32", Float32Array.from([cfg.timesteps[i]]), []),
       encoder_hidden_states: emb,
     });
-    const eps = (out.out_sample ?? Object.values(out)[0]).data;
+    const e = (out.out_sample ?? Object.values(out)[0]).data;
 
-    // Euler: denoised = lat − σ·ε, derivative = ε, then step by Δσ
+    // Euler with classifier-free guidance: eps = uncond + g(cond − uncond),
+    // then step by Δσ. (SD-Turbo skipped this; Tiny-SD is a normal SD 1.5.)
+    const g = cfg.guidance ?? 7.5;
     const d = S[i + 1] - S[i];
-    for (let k = 0; k < n; k++) lat[k] += eps[k] * d;
+    for (let k = 0; k < n; k++) {
+      const eps = e[n + k] + g * (e[k] - e[n + k]);
+      lat[k] += eps * d;
+    }
     onStep(i + 1, cfg.steps);
   }
 

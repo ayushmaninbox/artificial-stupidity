@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MODELS, byId, type ModelId, type ModelInfo } from "../models";
 import { loadConvos, saveConvos, titleFor, newId, type Convo } from "../history";
+import { suggestions } from "../prompts";
 
 type Turn = { who: "user" | "bot" | "note"; text: string; image?: string; examples?: string[] };
 type Phase = "cold" | "loading" | "ready" | "generating";
@@ -38,6 +39,11 @@ export default function Page() {
       none of them block chatting with whatever is already loaded. */
   const [downloads, setDownloads] = useState<Record<string, { loaded: number; total: number }>>({});
   const [step, setStep] = useState<{ at: number; of: number } | null>(null);
+  /* Suggestions are drawn from the model's own vocabulary, so they change when
+     the model does — offering emoji grammar to AS-F, or open prose to AS-I,
+     would just teach people the wrong thing to type. */
+  const [cues, setCues] = useState<string[]>([]);
+  useEffect(() => { setCues(suggestions(model, 4)); }, [model]);
   /** Models already in worker memory — switching back to one is instant. */
   const [resident, setResident] = useState<Set<string>>(() => new Set());
 
@@ -88,7 +94,7 @@ export default function Page() {
         {
           who: "note" as const,
           text: info.hint ? `Switched to ${next}. ${info.hint}` : `Switched to ${next}`,
-          examples: info.examples,
+          examples: info.examples ?? suggestions(next, 3),
         },
       ]);
       return next;
@@ -496,9 +502,14 @@ export default function Page() {
                 </div>
               </dl>
 
-              <div className="cue">Try asking</div>
+              <div className="cue-head">
+                <span>Try asking</span>
+                <button type="button" className="reshuffle" onClick={() => setCues(suggestions(model, 4))}>
+                  shuffle
+                </button>
+              </div>
               <div className="cues">
-                {CUES.map((c) => (
+                {cues.map((c) => (
                   <button key={c} className="cue-btn" onClick={() => ask(c)} disabled={busy}>
                     {c}
                   </button>
