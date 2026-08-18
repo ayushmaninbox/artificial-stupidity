@@ -105,6 +105,40 @@ itself, by transferring one misconception onto a new topic:
 The first is the *onion* explanation, reused for dogs. The third is the
 *microwave* explanation. Nobody wrote those.
 
+
+### The same question, every model
+
+Real output from `python compare.py --seed 1337` — not hand-picked:
+
+**`why is the sky blue`**
+
+| Model | Size | Answer |
+|---|--:|---|
+| **AS-5** | 91.7 KB | no 11 whats 4 |
+| **AS-4** | 168.8 KB | no it is rain |
+| **AS-3** | 226.4 KB | ok |
+| **AS-2** | 456.8 KB | a lot |
+| **AS-1** | 840.8 KB | no it isnt |
+| **AS-0** | 3.1 MB | ask ays what is 17 |
+| **AS-F** | 237.4 MB | The sun has a four-part shadow around it called the constellations. Each day there's one that drifts… |
+
+**`how do planes fly`**
+
+| Model | Size | Answer |
+|---|--:|---|
+| **AS-4** | 168.8 KB | no it |
+| **AS-0** | 3.1 MB | im not |
+| **AS-F** | 237.4 MB | They push air downwards and the water pushes back. That's just basic physics. I studied that. |
+
+The tiny models keep the *register* of internet chat — correctly spelled, real
+conversational moves — while being completely disconnected from the question.
+Only AS-F sounds human, and it is **2,600× larger**. It is also elaborately,
+confidently wrong, which is the whole point.
+
+Every tiny model answers `2 + 2` with **"127"**: they learned the shape of an
+arithmetic reply without learning arithmetic.
+
+
 ---
 
 ## Part 2 — How small can a model get?

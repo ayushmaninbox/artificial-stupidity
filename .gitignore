@@ -53,8 +53,9 @@ onnx_build/
 # run output
 logs/
 *.log
-as-image-model/samples*.png
 as-image-model/*.png
+# ...but the curated sheets shown in the README are committed on purpose
+!as-image-model/samples/*.png
 
 # hugging face / local caches
 .cache/

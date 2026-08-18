@@ -25,7 +25,8 @@ import numpy as np
 import torch
 
 import config as config_module
-from data.emoji import BACKGROUNDS, POSITIONS, SIZES, load_catalog, preload, compose, GROUPS
+from data.emoji import (BACKGROUNDS, POSITIONS, SIZES, EDGE_MARGIN,
+                        load_catalog, GROUPS)
 from model import WordTokenizer
 from sample import load, generate
 
@@ -47,22 +48,51 @@ def mask_of(img, bg_rgb, tol=48):
     return np.abs(img.astype(float) - np.array(bg_rgb)).sum(-1) > tol
 
 
-def position_of(img, bg_rgb):
+def extent_of(img, bg_rgb):
+    """Bounding-box extent as a fraction of the frame, plus the centroid.
+
+    Area fraction was the first attempt and is wrong: a rainbow and a soccer
+    ball at the same nominal size cover very different areas, so area confused
+    42% of "large" renders for "medium". The renderer scales by *bbox* fraction,
+    so measuring the same thing it controls gives a clean separation —
+    0.33 / 0.52 / 0.73 with almost no spread.
+    """
     m = mask_of(img, bg_rgb)
     if m.sum() < 8:
         return None
     ys, xs = np.nonzero(m)
-    fx, fy = xs.mean() / img.shape[1], ys.mean() / img.shape[0]
-    col = "left" if fx < 0.40 else ("right" if fx > 0.60 else "")
-    row = "top" if fy < 0.40 else ("bottom" if fy > 0.60 else "")
+    h, w = img.shape[0], img.shape[1]
+    ext = max(ys.max() - ys.min() + 1, xs.max() - xs.min() + 1) / h
+    return ext, xs.mean() / w, ys.mean() / h
+
+
+def position_of(img, bg_rgb):
+    """Which of the 9 cells, judged against the travel that size allows.
+
+    Fixed thresholds do not work. A "large" glyph can only move about 0.12 of
+    the frame from centre before it clips, so an absolute 0.40/0.60 rule scores
+    a correctly-placed large object as "center". This inverts the renderer:
+    offset is measured relative to the free space that glyph actually had.
+    """
+    e = extent_of(img, bg_rgb)
+    if e is None:
+        return None
+    ext, fx, fy = e
+    free = max((1.0 - ext) / 2.0 * EDGE_MARGIN, 1e-6)
+    dx = (fx - 0.5) / free
+    dy = (fy - 0.5) / free
+    col = "left" if dx < -0.45 else ("right" if dx > 0.45 else "")
+    row = "top" if dy < -0.45 else ("bottom" if dy > 0.45 else "")
     return (f"{row} {col}".strip() or "center")
 
 
 def size_of(img, bg_rgb):
-    m = mask_of(img, bg_rgb)
-    frac = m.sum() / m.size
-    # thresholds calibrated against the renderer's own coverage
-    return "small" if frac < 0.10 else ("medium" if frac < 0.26 else "large")
+    e = extent_of(img, bg_rgb)
+    if e is None:
+        return None
+    ext = e[0]
+    # midpoints between the measured medians 0.33 / 0.52 / 0.73
+    return "small" if ext < 0.422 else ("medium" if ext < 0.625 else "large")
 
 
 def main():
@@ -93,11 +123,12 @@ def main():
     prompts, truth = [], []
     for name in names:
         for pos in ("top left", "center", "bottom right"):
-            for bg in ("white", "navy"):
+            for bg, size in (("white", "small"), ("navy", "large")):
                 for _ in range(args.samples):
-                    prompts.append(f"{name} in the {pos} on a {bg} background")
+                    prompts.append(f"a {size} {name} in the {pos} "
+                                   f"on a {bg} background")
                     truth.append({"name": name, "position": pos, "bg": bg,
-                                  "size": "medium"})
+                                  "size": size})
 
     print(f"\n  {len(prompts)} prompts  |  {args.steps} steps  |  "
           f"guidance {args.guidance}  |  {device}", flush=True)

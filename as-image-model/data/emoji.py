@@ -144,9 +144,18 @@ def compose(glyph, spec, size):
 
 
 def caption(spec, bare):
+    """Spec -> caption.
+
+    Size belongs in here. It was omitted in the first version, which meant the
+    renderer varied glyph scale while the caption said nothing about it — so
+    one caption mapped to three different images and the model correctly
+    learned to ignore scale entirely. Any benchmark scoring size against that
+    is measuring noise. If an attribute is not in the text, it is not
+    controllable, and it should not be claimed.
+    """
     if bare:
         return spec["name"]
-    return (f"{spec['name']} in the {spec['position']} "
+    return (f"a {spec['size']} {spec['name']} in the {spec['position']} "
             f"on a {spec['bg']} background")
 
 
