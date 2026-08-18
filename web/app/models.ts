@@ -33,8 +33,8 @@ export const MODELS: ModelInfo[] = [
   { id: "AS-I-300", family: "image", ready: true,  size: "17 MB",  blurb: "Same model, 300 glyphs · sharper",
     hint: "It only draws emoji, and only in the grammar it was trained on: a name, optionally with a size, a position and a background colour. It knows 300 of the most distinct glyphs, so it draws them more sharply.",
     examples: ["cat face", "strawberry", "a large pizza in the center on a white background"] },
-  { id: "AS-IF",    family: "image", ready: true,  size: "1.2 GB", blurb: "Adapted SD-Turbo · draws anything",
-    hint: "This one draws anything you describe — no grammar, no vocabulary limits. It is a 1.2 GB download the first time.",
+  { id: "AS-IF",    family: "image", ready: true,  size: "454 MB", blurb: "Adapted Stable Diffusion · draws anything",
+    hint: "This one draws anything you describe — no grammar, no vocabulary limits. It is a 454 MB download the first time, and slower than the others.",
     examples: ["two astronauts playing chess", "a red car beside a blue house", "an apple on a wooden table"] },
 ];
 

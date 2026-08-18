@@ -28,11 +28,15 @@ const AS_F_FILES = [
   `${AS_F}/tokenizer_config.json`,
 ];
 
+/* tiny-sd, not sd-turbo. SD-Turbo's 869 MB UNet asks ONNX Runtime for >2 GB
+   once it expands the graph, which exceeds what a 32-bit WASM heap can
+   address — so warming it was downloading a gigabyte that could never run. */
 const AS_IF_FILES = [
-  `${AS_IF}/sd-turbo/text_encoder/model.onnx`,
-  `${AS_IF}/sd-turbo/unet/model.onnx`,
-  `${AS_IF}/sd-turbo/vae_decoder_tiny/model.onnx`,
-  `${AS_IF}/sd-turbo/vae_decoder_tiny/model.onnx.data`,
+  `${AS_IF}/tiny-sd/text_encoder/model.onnx`,
+  `${AS_IF}/tiny-sd/unet/model.onnx`,
+  `${AS_IF}/tiny-sd/vae_decoder_tiny/model.onnx`,
+  `${AS_IF}/tiny-sd/vae_decoder_tiny/model.onnx.data`,
+  `${AS_IF}/tokenizer.json`,
 ];
 
 /**

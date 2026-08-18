@@ -18,7 +18,7 @@
  *    cache-first forever. Everything else is stale-while-revalidate.
  */
 
-const SHELL = "as-shell-v2";   // bumped: v1 cached a broken put path
+const SHELL = "as-shell-v3";   // v2 cached configs it should not have
 const MODELS = "transformers-cache";      // shared with the inference worker
 const HF = "https://huggingface.co/";
 
@@ -30,7 +30,20 @@ self.addEventListener("install", (e) => {
   );
 });
 
+/** Drop weights we will never load again — notably the sd-turbo build, which
+    cannot fit in a WASM heap and was cached before we knew that. */
+async function evictDeadWeights() {
+  try {
+    const cache = await caches.open(MODELS);
+    const keys = await cache.keys();
+    await Promise.all(
+      keys.filter((r) => r.url.includes("/sd-turbo/")).map((r) => cache.delete(r)),
+    );
+  } catch { /* nothing here is worth failing activation over */ }
+}
+
 self.addEventListener("activate", (e) => {
+  e.waitUntil(evictDeadWeights());
   e.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
@@ -47,6 +60,18 @@ self.addEventListener("fetch", (e) => {
   // Model weights: immutable per revision, so a hit is always correct and a
   // miss is the only thing worth paying for.
   if (request.url.startsWith(HF)) {
+    // Weights are immutable per revision and enormous, so they are cache-first
+    // forever. Configs are small and DO change — caching model.json first is
+    // how a build that had been repointed at a smaller model kept loading the
+    // old one, and kept running out of memory for a reason no longer in the
+    // source. Configs go to the network first.
+    const isConfig = /\.json($|\?)/.test(request.url);
+    if (isConfig) {
+      e.respondWith(
+        fetch(request, { cache: "no-store" }).catch(() => caches.match(request)),
+      );
+      return;
+    }
     e.respondWith(
       caches.open(MODELS).then(async (cache) => {
         const hit = await cache.match(request, { ignoreVary: true });

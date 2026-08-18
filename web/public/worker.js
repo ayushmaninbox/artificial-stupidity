@@ -72,6 +72,29 @@ const SESSION_OPTS = (heavy = false) =>
       }
     : { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
 
+/**
+ * Turn an ONNX Runtime failure into something a person can act on.
+ *
+ * When the WASM heap cannot satisfy an allocation, the exception that reaches
+ * JavaScript is a bare pointer — "2174390400" — which reads like a crash for
+ * no reason. It is actually the byte count that could not be allocated, and
+ * saying so is the difference between a bug report and a shrug.
+ */
+function describe(err) {
+  const raw = err instanceof Error ? err.message : String(err);
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 1e8) {
+    const gb = (n / 1e9).toFixed(2);
+    return `Ran out of memory loading the model — it asked for ${gb} GB, ` +
+           `more than this browser allows a single tab. Try a smaller model, ` +
+           `or a browser with WebGPU enabled.`;
+  }
+  if (/out of memory|Aborted|allocation/i.test(raw)) {
+    return `Ran out of memory loading the model. Try a smaller one.`;
+  }
+  return raw;
+}
+
 let _ort = null;
 async function getOrt() {
   if (_ort) return _ort;
@@ -384,7 +407,7 @@ async function loadImage(id) {
   const ort = await getOrt();
   const base = `${IMG_BASE}/${id}`;
 
-  const cfg = await (await fetch(`${base}/model.json`)).json();
+  const cfg = await (await fetch(`${base}/model.json`, { cache: "no-store" })).json();
   // one bar across all three graphs, so it does not reset twice mid-download
   const APPROX = 17_000_000;
   let seen = 0;
@@ -506,7 +529,11 @@ const SD_BASE = `https://huggingface.co/${SD_REPO}/resolve/main`;
 async function loadSD() {
   if (sdCache) return sdCache;
   const ort = await getOrt();
-  const cfg = await (await fetch(`${SD_BASE}/web/model.json`)).json();
+  // no-store: this config decides WHICH build loads, so a stale copy sends the
+  // browser after a model that cannot run
+  const cfg = await (
+    await fetch(`${SD_BASE}/web/model.json`, { cache: "no-store" })
+  ).json();
 
   const APPROX = 454_000_000;
   let seen = 0;
@@ -524,7 +551,9 @@ async function loadSD() {
   );
   const tok = await AutoTokenizer.from_pretrained(SD_REPO);
 
-  const b = `${SD_BASE}/${cfg.dir ?? "tiny-sd"}`;
+  // Refuse the build we know cannot run, whatever a cached config claims.
+  const dir = cfg.dir === "sd-turbo" ? "tiny-sd" : (cfg.dir ?? "tiny-sd");
+  const b = `${SD_BASE}/${dir}`;
   const [tb, ub, db] = [
     await fetchBytes(`${b}/text_encoder/model.onnx`, "AS-IF", bump),
     await fetchBytes(`${b}/unet/model.onnx`, "AS-IF", bump),
@@ -768,7 +797,7 @@ self.addEventListener("message", async (e) => {
     self.postMessage({
       type: "error",
       model: e.data?.model,
-      message: err instanceof Error ? err.message : String(err),
+      message: describe(err),
     });
   }
 });
