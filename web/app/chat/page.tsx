@@ -48,6 +48,21 @@ export default function Page() {
     // detour, not somewhere to be stranded by a preference set days ago.
   }, []);
 
+  /* Start fetching AS-F immediately rather than waiting for a first question.
+     It is 164 MB, so the earlier that starts the less of it the reader waits
+     through — and the browser cache makes every later visit free anyway. */
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPhase((cur) => {
+        if (cur !== "cold") return cur;
+        setPreparing({ id: "AS-F", loaded: 0, total: 0 });
+        worker.current?.postMessage({ type: "load", model: "AS-F" });
+        return "loading";
+      });
+    }, 400);   // let the page paint first
+    return () => clearTimeout(t);
+  }, []);
+
   /** Switch model and record it in the transcript, so a reply can always be
       attributed to the thing that produced it when reading back. */
   /** Commit a switch: record it in the transcript and close the menu. */
@@ -460,7 +475,7 @@ export default function Page() {
                           disabled={preparing !== null && preparing.id !== m.id}
                           className={`pick-row${m.id === model ? " on" : ""}${
                             preparing?.id === m.id ? " busy" : ""
-                          }`}
+                          }${resident.has(m.id) ? " have" : " want"}`}
                           onClick={() => pickModel(m.id)}
                         >
                           <span className="pick-id">{m.id}</span>
@@ -468,13 +483,28 @@ export default function Page() {
                             {preparing?.id === m.id ? "downloading…" : m.blurb}
                           </span>
                           <span className="pick-size">
-                            {preparing?.id === m.id
-                              ? preparing.total
+                            {preparing?.id === m.id ? (
+                              preparing.total
                                 ? `${Math.round((preparing.loaded / preparing.total) * 100)}%`
                                 : "…"
-                              : resident.has(m.id)
-                                ? "ready"
-                                : m.size}
+                            ) : resident.has(m.id) ? (
+                              <span className="tickmark" aria-label="downloaded">
+                                <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+                                  <path d="M1.5 5.8l2.6 2.6L9.5 3" stroke="currentColor"
+                                        strokeWidth="1.6" fill="none" strokeLinecap="round"
+                                        strokeLinejoin="round" />
+                                </svg>
+                              </span>
+                            ) : (
+                              <span className="dl">
+                                <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+                                  <path d="M5.5 1v6.4M3 5.2l2.5 2.5L8 5.2M1.6 9.6h7.8"
+                                        stroke="currentColor" strokeWidth="1.3" fill="none"
+                                        strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                {m.size}
+                              </span>
+                            )}
                           </span>
                           {preparing?.id === m.id && (
                             <span className="pick-bar" aria-hidden>

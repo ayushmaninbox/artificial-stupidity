@@ -488,3 +488,57 @@ body {
   font-size: 10px; font-style: normal; font-family: var(--mono);
   display: grid; place-items: center; padding: 0 3px;
 }
+
+/* ------------------------------------- picker: downloaded vs not, and busy
+
+   A model you have and a model you would have to fetch are different offers,
+   so they should not look identical. Resident models read at full strength
+   with a tick; everything else is dimmed and carries a download glyph, which
+   makes the 164 MB decision visible before it is taken rather than after.   */
+
+.pick-row.want .pick-id,
+.pick-row.want .pick-blurb { color: var(--ink-3); }
+.pick-row.want:hover:not(:disabled) .pick-id,
+.pick-row.want:hover:not(:disabled) .pick-blurb { color: var(--ink-2); }
+
+.pick-row.have .pick-id { color: var(--ink); }
+.pick-row.have .pick-blurb { color: var(--ink-2); }
+
+.pick-size .dl,
+.pick-size .tickmark {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 11px;
+}
+.pick-size .dl { color: var(--ink-3); }
+.pick-row.want:hover:not(:disabled) .pick-size .dl { color: var(--accent); }
+.pick-size .tickmark { color: var(--accent); }
+
+/* the row being fetched keeps its place and grows a bar along the bottom */
+.pick-row.busy { position: relative; background: var(--panel-2); }
+.pick-row.busy .pick-id { color: var(--accent); }
+.pick-row.busy .pick-blurb { color: var(--ink-2); }
+.pick-row.busy .pick-size { color: var(--accent); }
+
+.pick-bar {
+  position: absolute; left: 10px; right: 10px; bottom: 4px; height: 2px;
+  background: var(--line); border-radius: 2px; overflow: hidden;
+  grid-column: 1 / -1;
+}
+.pick-bar i {
+  display: block; height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width 0.25s ease;
+}
+/* before content-length arrives there is no percentage to show, so sweep */
+.pick-bar i.idle {
+  width: 34%; animation: pick-sweep 1.1s ease-in-out infinite;
+}
+@keyframes pick-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+.pick-row:disabled .pick-size .dl { color: var(--ink-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pick-bar i.idle { animation: none; width: 100%; opacity: 0.4; }
+}
