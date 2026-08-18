@@ -37,6 +37,9 @@ as-image-model/data/emoji/
 as-image-model/data/emoji_src/
 as-image-model/data/shapes/
 
+# AS-IF: exported + quantized SD-Turbo, several GB
+as-image-model/asif_build/
+
 # trained models and exports
 checkpoints/
 onnx_build/
