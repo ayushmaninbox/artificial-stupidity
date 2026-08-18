@@ -236,11 +236,46 @@ Quantization is per component, because they do not tolerate damage equally:
 |---|---|--:|--:|---|
 | UNet | int8 | 3.2 GB | 869 MB | the bulk, and the most robust |
 | Text encoder | int8 | 1.3 GB | 342 MB | robust |
-| VAE decoder | **fp16** | 189 MB | 198 MB | int8 here causes visible colour banding on flat regions, for ~80 MB. Not worth it |
+| VAE decoder | **replaced** | 189 MB | **4.9 MB** | see below |
 | VAE encoder | — | 130 MB | — | unused for text-to-image; not shipped |
 
-**Measured: 4.8 GB → 1.4 GB shipped, 3.3× smaller.** 512×512 at 2 steps takes
-**22 s/image on CPU** via int8 ONNX.
+**Measured: 4.8 GB → 1.22 GB shipped.**
+
+### Replacing the decoder beats quantizing it
+
+Quantizing SD's VAE decoder to int8 causes visible colour banding on flat
+regions and saves ~80 MB. Replacing it outright with **TAESD** — a distilled
+tiny autoencoder — saves 193 MB *and* runs faster:
+
+| | SD decoder | TAESD |
+|---|--:|--:|
+| Size | 198 MB | **4.9 MB** |
+| Time per 512×512 image (end to end) | 20.6 s | **7.7 s** |
+| Quality | reference | visually indistinguishable |
+
+It is faster because SD's decoder is roughly a third of total generation time
+at 512px on CPU. Enable with `--tiny-vae` on both the export and the sampler.
+
+> One trap worth writing down: TAESD's `scaling_factor` is **1.0**, so it
+> consumes UNet-space latents *directly*. Dividing by SD's 0.18215 first — the
+> move every SD decode example shows — hands it values 5.5× too large and
+> returns psychedelic noise that reads as a broken model rather than a broken
+> constant.
+
+### Where the remaining bytes are
+
+```
+unet          869 MB   865M params. int8 of 865M params IS 865 MB.
+text_encoder  342 MB   OpenCLIP ViT-H, 354M params
+tiny vae        4.9 MB
+```
+
+The UNet is the wall, and 4-bit does not move it: `MatMulNBitsQuantizer` only
+touches `MatMul` nodes and SD's UNet is dominated by `Conv` — the same reason
+4-bit came out *worse* than int8 for GPT-2 in the text model's `DEPLOY.md`.
+Roughly **950 MB is the floor** for SD-Turbo. Going meaningfully below that
+means a smaller UNet (BK-SDM-Tiny is ~323M params) plus LCM-LoRA to keep
+few-step sampling — a different project, not a flag.
 
 That number is the honest headline of this track, and it cuts against the
 project's own thesis: even after compressing a general model 3.3×, AS-IF is

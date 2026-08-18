@@ -207,7 +207,7 @@ This repo does **both** of the achievable ones, and labels which is which.
 |:--|:--|:--|
 | Weights | trained here, from scratch | Stability AI's SD-Turbo |
 | Work done here | the entire model | compression, export, browser runtime |
-| Size | **~24 MB** int8 | **~1.4 GB** int8 (measured, from 4.8 GB fp32) |
+| Size | **~24 MB** int8 | **~1.2 GB** int8 (measured, from 4.8 GB fp32) |
 | Draws | ~1250 emoji, placed and coloured | anything |
 | Resolution | 64×64 | 512×512 |
 | Steps | 8 | 1–4 |
@@ -290,9 +290,9 @@ Both timed on the same M4 MacBook Air, int8, on the **CPU** — no GPU:
 | Resolution | 64×64 | 512×512 |
 | Steps | 8 | 2 |
 | **Time per image** | **0.48 s** | **20.3 s** |
-| Model size | 14 MB | 1.4 GB |
+| Model size | 14 MB | 1.2 GB |
 
-AS-IF is **42× slower and 100× larger** — and it can draw a frog. That is the
+AS-IF is **42× slower and ~90× larger** — and it can draw a frog. That is the
 trade stated as two numbers instead of an argument.
 
 

@@ -40,6 +40,8 @@ def main():
     ap.add_argument("--size", type=int, default=512)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--out", default="asif_samples.png")
+    ap.add_argument("--tiny-vae", action="store_true",
+                    help="decode with TAESD (4.9 MB) instead of SD's 198 MB decoder")
     args = ap.parse_args()
 
     build = ROOT / args.build
@@ -58,6 +60,16 @@ def main():
     if not args.sheet and not args.prompt:
         raise SystemExit("give --prompt or --sheet")
 
+    tiny = None
+    if args.tiny_vae:
+        import onnxruntime as ort
+        import numpy as np
+        tp = build / "vae_decoder_tiny" / "model.onnx"
+        if not tp.exists():
+            raise SystemExit("no tiny decoder — run: python asif_export.py --tiny-vae")
+        tiny = ort.InferenceSession(str(tp))
+        print("  decoding with TAESD (4.9 MB)")
+
     imgs, t0 = [], time.time()
     for p in prompts:
         gen = torch.Generator().manual_seed(args.seed) if args.seed is not None else None
@@ -69,8 +81,21 @@ def main():
             guidance_scale=0.0,
             height=args.size, width=args.size,
             generator=gen,
+            output_type="latent" if tiny is not None else "pil",
         )
-        imgs.append(out.images[0])
+        if tiny is not None:
+            import numpy as np
+            # TAESD's scaling_factor is 1.0, so it consumes UNet-space latents
+            # directly. Dividing by SD's 0.18215 first — the obvious move —
+            # hands it values 5.5x too large and returns psychedelic garbage.
+            z = np.asarray(out.images, dtype=np.float32)
+            if z.ndim == 3:
+                z = z[None]
+            dec = tiny.run(None, {"latent_sample": z})[0]
+            arr = ((np.clip(dec, -1, 1) + 1) * 127.5).astype("uint8")[0].transpose(1, 2, 0)
+            imgs.append(Image.fromarray(arr))
+        else:
+            imgs.append(out.images[0])
         print(f"    {p}", flush=True)
     dt = time.time() - t0
 
