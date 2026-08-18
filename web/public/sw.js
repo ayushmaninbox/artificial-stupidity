@@ -18,7 +18,7 @@
  *    cache-first forever. Everything else is stale-while-revalidate.
  */
 
-const SHELL = "as-shell-v1";
+const SHELL = "as-shell-v2";   // bumped: v1 cached a broken put path
 const MODELS = "transformers-cache";      // shared with the inference worker
 const HF = "https://huggingface.co/";
 
@@ -52,7 +52,10 @@ self.addEventListener("fetch", (e) => {
         const hit = await cache.match(request, { ignoreVary: true });
         if (hit) return hit;
         const res = await fetch(request);
-        if (res.ok) cache.put(request, res.clone());
+        // Cache.put rejects 206 Partial Content, and Hugging Face answers
+        // ranged requests with exactly that — res.ok is true for 206, so the
+        // obvious guard lets it through and the put throws.
+        if (res.status === 200) cache.put(request, res.clone());
         return res;
       }),
     );
@@ -67,8 +70,10 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL).then((c) => c.put(request, copy));
+          if (res.status === 200) {
+            const copy = res.clone();
+            caches.open(SHELL).then((c) => c.put(request, copy));
+          }
           return res;
         })
         .catch(async () => (await caches.match(request)) || caches.match("/chat")),
@@ -81,7 +86,7 @@ self.addEventListener("fetch", (e) => {
       const hit = await cache.match(request);
       const net = fetch(request)
         .then((res) => {
-          if (res.ok) cache.put(request, res.clone());
+          if (res.status === 200) cache.put(request, res.clone());
           return res;
         })
         .catch(() => hit);
@@ -99,7 +104,7 @@ self.addEventListener("backgroundfetchsuccess", (e) => {
     await Promise.all(
       records.map(async (r) => {
         const res = await r.responseReady;
-        if (res.ok) await cache.put(r.request, res.clone());
+        if (res.status === 200) await cache.put(r.request, res.clone());
       }),
     );
     await e.updateUI({ title: "Artificial Stupidity is ready offline" });

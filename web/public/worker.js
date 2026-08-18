@@ -632,34 +632,22 @@ async function ask(text, temperature, model) {
 self.addEventListener("message", async (e) => {
   try {
     if (e.data.type === "load") {
+      // Loading only loads. An earlier edit accidentally pasted the generation
+      // branches in here, so switching a model tried to draw with a prompt
+      // that does not exist in this scope — "text is not defined".
       const id = MODELS[e.data.model] ? e.data.model : "AS-F";
-      if (MODELS[id].kind === "sd") {
-    const { rgba, size } = await runSD(text, (step, total) =>
-      self.postMessage({ type: "step", step, total }),
-    );
-    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
-    self.postMessage({ type: "done" });
-    return;
-  }
-
-  if (MODELS[id].kind === "image") {
-    const { rgba, size } = await runImage(id, text, (step, total) =>
-      self.postMessage({ type: "step", step, total }),
-    );
-    // transfer the buffer rather than copying it — it is 64x64x4 today but
-    // this is the path a larger model would use too
-    self.postMessage({ type: "image", width: size, height: size, rgba }, [rgba.buffer]);
-    self.postMessage({ type: "done" });
-    return;
-  }
-
-  if (MODELS[id].kind === "char") {
-        // loadChar streams and reports its own progress; once the session
-        // exists the model is genuinely ready to answer
+      const kind = MODELS[id].kind;
+      if (kind === "sd") {
+        await loadSD();
+        self.postMessage({ type: "ready", model: id });
+      } else if (kind === "image") {
+        await loadImage(id);
+        self.postMessage({ type: "ready", model: id });
+      } else if (kind === "char") {
         await loadChar(id);
         self.postMessage({ type: "ready", model: id });
       } else {
-        await load();
+        await load();   // AS-F posts its own ready
       }
     } else if (e.data.type === "ask") {
       await ask(e.data.text, e.data.temperature, e.data.model);

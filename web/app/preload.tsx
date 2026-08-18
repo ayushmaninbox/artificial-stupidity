@@ -67,7 +67,8 @@ async function warm(urls: string[]) {
     try {
       if (await cache.match(url)) continue;          // already have it
       const res = await fetch(url, { mode: "cors" });
-      if (res.ok) await cache.put(url, res.clone());
+      // 206 responses cannot be cached; res.ok would let them through
+      if (res.status === 200) await cache.put(url, res.clone());
     } catch {
       /* offline, quota, CORS — warming is an optimisation, never a failure */
     }
