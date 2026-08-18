@@ -127,14 +127,23 @@ export function SizeScale({ items }: { items: { name: string; bytes: number; min
       ))}
       {items.map((it, i) => {
         const yy = 20 + i * rowH;
+        const end = x(it.bytes);
+        // A label drawn after the bar runs off the canvas once the bar is
+        // long, so past ~60% it moves inside and flips to a light fill.
+        const inside = end > w - 150;
         return (
           <g key={it.name}>
             <rect className={it.mine ? "bar" : "bar-dim"} x={pad} y={yy} rx="3"
-                  width={Math.max(2, x(it.bytes) - pad)} height={rowH - 7} />
+                  width={Math.max(2, end - pad)} height={rowH - 7} />
             <text x={pad + 8} y={yy + rowH / 2 + 1} style={{ fill: "var(--d-bg)", fontWeight: 500 }}>
               {it.name}
             </text>
-            <text x={x(it.bytes) + 8} y={yy + rowH / 2 + 1} style={{ fill: "var(--d-ink-2)" }}>
+            <text
+              x={inside ? end - 8 : end + 8}
+              y={yy + rowH / 2 + 1}
+              textAnchor={inside ? "end" : "start"}
+              style={{ fill: inside ? "var(--d-bg)" : "var(--d-ink-2)" }}
+            >
               {it.label}
             </text>
           </g>

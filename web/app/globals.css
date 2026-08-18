@@ -117,9 +117,7 @@ body {
 
 /* ----------------------------------------------------------------- thread */
 
-.scroll { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-.scroll::-webkit-scrollbar { width: 9px; }
-.scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 3px solid transparent; background-clip: content-box; }
+.scroll { flex: 1; overflow-y: auto; }
 
 .column { max-width: 720px; margin: 0 auto; padding: 30px 24px 12px; }
 
@@ -359,7 +357,6 @@ body {
 .rail-list {
   flex: 1; min-height: 0; overflow-y: auto; margin-top: 12px;
   display: flex; flex-direction: column; gap: 1px;
-  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
 .rail-empty { font-size: 12.5px; color: var(--ink-3); padding: 8px 4px; }
 
@@ -394,7 +391,15 @@ body {
 .rail-foot {
   border-top: 1px solid var(--line); margin-top: 8px; padding-top: 9px;
   font-size: 11px; color: var(--ink-3);
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
 }
+.rail-collapse {
+  flex: none; display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 7px;
+  background: none; border: 1px solid transparent; color: var(--ink-3);
+  cursor: pointer; transition: color 0.16s ease, border-color 0.16s ease;
+}
+.rail-collapse:hover { color: var(--ink); border-color: var(--line); }
 
 .rail-veil { display: none; }
 .only-narrow { display: none; }
@@ -569,9 +574,25 @@ body {
 .rail-collapse:hover, .rail-show:hover { color: var(--ink); border-color: var(--line); }
 
 .rail-show { display: none; margin-left: 0; }
-.app.rail-collapsed .rail { display: none; }
-.app.rail-collapsed { grid-template-columns: 1fr; }
-.app.rail-collapsed .rail-show { display: grid; }
+
+/* Collapsed is an icon rail, not a hidden one: the logo stays put, the
+   conversation list goes away, and the toggle sits at the bottom where it was
+   before — so expanding lands the cursor on the same control that collapsed. */
+.app { transition: grid-template-columns 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.app.rail-collapsed { grid-template-columns: 60px 1fr; }
+.app.rail-collapsed .rail { padding: 10px 8px; align-items: center; }
+.app.rail-collapsed .rail-label { display: none; }
+.app.rail-collapsed .rail-brand { justify-content: center; padding-bottom: 10px; }
+.app.rail-collapsed .rail-home { gap: 0; }
+.app.rail-collapsed .rail-new {
+  justify-content: center; padding: 9px 0; width: 42px; flex: none;
+}
+.app.rail-collapsed .rail-list { display: none; }
+.app.rail-collapsed .rail-foot {
+  display: grid; place-items: center; border-top: 1px solid var(--line);
+  width: 100%; margin-top: auto;
+}
+.app.rail-collapsed .rail-top { justify-content: center; }
 
 /* --------------------------------------------------------- skeletons */
 
@@ -628,3 +649,56 @@ body {
 
 /* skeleton lines stack as blocks inside the reply */
 .say .skel-line { display: block; }
+
+/* ------------------------------------------------ route + section motion */
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.app, .lp { animation: page-in 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* the thread itself fades when the conversation is swapped from the rail */
+@keyframes thread-in { from { opacity: 0; } to { opacity: 1; } }
+.column { animation: thread-in 0.28s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app, .lp, .column { animation: none; }
+  .app { transition: none; }
+}
+
+/* ============================================================ scrollbars ==
+
+   One treatment for every scrolling surface on the site — the thread, the
+   conversation rail, the model menu, the drawer, and any overflowing table or
+   chart on the landing page.
+
+   Firefox gets `scrollbar-width`, which is all it exposes. WebKit gets the
+   thumb drawn with a transparent border and `background-clip: content-box`,
+   which is the only way to inset a scrollbar thumb — padding does nothing on a
+   pseudo-element. The track stays invisible so the bar reads as part of the
+   content rather than a chrome element bolted to the edge.                   */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.18s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* the composer is short enough that a bar inside it is pure noise */
+.box textarea::-webkit-scrollbar { width: 6px; }
+.box textarea::-webkit-scrollbar-thumb { border-width: 2px; }

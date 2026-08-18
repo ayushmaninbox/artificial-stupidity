@@ -456,3 +456,8 @@
 }
 .lp .hl { color: var(--d-ink); }
 .lp-sec > .lp-wrap > .lp-in + .lp-in { margin-top: 26px; }
+
+/* the landing page owns a darker palette, so its scrollbars follow it */
+.lp { scrollbar-color: var(--d-line) transparent; }
+.lp ::-webkit-scrollbar-thumb { background: var(--d-line); background-clip: content-box; }
+.lp ::-webkit-scrollbar-thumb:hover { background: var(--d-ink-3); background-clip: content-box; }

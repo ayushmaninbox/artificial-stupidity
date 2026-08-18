@@ -246,22 +246,11 @@ export default function Page() {
       {/* ------------------------------------------------- conversations rail */}
       <aside className="rail" aria-label="Conversations">
         <div className="rail-brand">
-          <Link href="/" className="rail-home">
+          <Link href="/" className="rail-home" title="Overview">
             <img src="/as-f.png" alt="" />
-            <span>Artificial Stupidity</span>
+            <span className="rail-label">Artificial Stupidity</span>
           </Link>
-          <button
-            className="rail-collapse"
-            onClick={() => setCollapsed((v) => !v)}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
-              <rect x="1.6" y="2.6" width="11.8" height="9.8" rx="2"
-                    stroke="currentColor" strokeWidth="1.2" fill="none" />
-              <path d="M5.8 2.6v9.8" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
-          </button>
+          <button className="rail-close only-narrow" onClick={() => setRail(false)} aria-label="Close">×</button>
         </div>
         <div className="rail-top">
           <button
@@ -272,9 +261,8 @@ export default function Page() {
               <path d="M6.5 1.5v10M1.5 6.5h10" stroke="currentColor" strokeWidth="1.5"
                     strokeLinecap="round" />
             </svg>
-            New chat
+            <span className="rail-label">New chat</span>
           </button>
-          <button className="rail-close only-narrow" onClick={() => setRail(false)} aria-label="Close">×</button>
         </div>
 
         <div className="rail-list">
@@ -320,7 +308,19 @@ export default function Page() {
         </div>
 
         <div className="rail-foot">
-          <span>Saved in this browser only</span>
+          <span className="rail-label">Saved in this browser only</span>
+          <button
+            className="rail-collapse"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+              <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.2"
+                    stroke="currentColor" strokeWidth="1.25" fill="none" />
+              <path d="M6.4 2.8v10.4" stroke="currentColor" strokeWidth="1.25" />
+            </svg>
+          </button>
         </div>
       </aside>
 
@@ -352,7 +352,7 @@ export default function Page() {
       </header>
 
       <div className="scroll">
-        <div className="column">
+        <div className="column" key={convoId}>
           {turns.length === 0 && (
             <section className="hero">
               <h1>Confidently wrong about everything.</h1>
