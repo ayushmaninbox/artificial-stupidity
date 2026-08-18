@@ -86,10 +86,13 @@ async function SESSION_OPTS(heavy = false) {
   const gpu = await hasWebGPU();
   return {
     executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"],
-    // "all" rewrites the graph into fresh buffers before running; on the WASM
-    // fallback that is the difference between fitting and not.
-    graphOptimizationLevel: gpu ? "all" : "basic",
-    ...(gpu ? {} : { enableMemPattern: false, enableCpuMemArena: false }),
+    /* "disabled", deliberately. Every other level rewrites the graph into a
+       second set of buffers before the first is released, so a 325 MB model
+       briefly needs ~650 MB. Optimisation buys some speed; it costs the load
+       succeeding at all, and a slower image beats no image. */
+    graphOptimizationLevel: "disabled",
+    enableMemPattern: false,
+    enableCpuMemArena: false,
   };
 }
 
@@ -694,15 +697,23 @@ async function loadSD() {
   // Refuse the build we know cannot run, whatever a cached config claims.
   const dir = cfg.dir === "sd-turbo" ? "tiny-sd" : (cfg.dir ?? "tiny-sd");
   const b = `${SD_BASE}/${dir}`;
-  const opt = await SESSION_OPTS(true);
-  // Sequentially, smallest first: each session is built and settled before the
-  // next download starts, so peak memory is one model rather than three.
-  const tU = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
-  const text = await ort.InferenceSession.create(tU, opt);
-  const dU = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
-  const dec = await ort.InferenceSession.create(dU, opt);
+  /* Biggest FIRST, not last.
+     Loading the 124 MB text encoder before the 325 MB UNet leaves the heap
+     already occupied and fragmented when the allocation that matters arrives —
+     which is why it failed asking for a further 0.22 GB after the small ones
+     had loaded fine. The UNet gets the fresh heap; the small graphs fit into
+     whatever is left, because they always would. */
+  const heavy = await SESSION_OPTS(true);
+  const light = await SESSION_OPTS(false);
+
   const uU = await ensureCached(`${b}/unet/model.onnx`, "AS-IF", bump);
-  const unet = await ort.InferenceSession.create(uU, opt);
+  const unet = await ort.InferenceSession.create(uU, heavy);
+
+  const tU = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
+  const text = await ort.InferenceSession.create(tU, light);
+
+  const dU = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
+  const dec = await ort.InferenceSession.create(dU, light);
 
   sdCache = { cfg, tok, text, unet, dec };
   // handlers[0] is what ORT settled on after dropping anything unavailable —
