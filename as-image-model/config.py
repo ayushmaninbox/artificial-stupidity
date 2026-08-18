@@ -95,6 +95,13 @@ PRESETS = {
 
     # 128x128, for when the small one works
     "AS-I-128": Config(name="AS-I-128", image_size=128, unet_base=128),
+
+    # Same network, a quarter of the vocabulary. AS-I has to spread 13.2M
+    # parameters across 1254 glyph identities; this one sees ~300, so each is
+    # ~4x more frequent in training. The pair answers the question the whole
+    # project is about: how much coverage does a fixed parameter budget buy
+    # before individual items stop being recognisable?
+    "AS-I-300": Config(name="AS-I-300", data_dir="data/emoji300"),
 }
 
 

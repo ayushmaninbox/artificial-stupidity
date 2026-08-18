@@ -32,13 +32,18 @@ as-text-model/data/processed/
 as-text-model/data/persona/
 as-text-model/data/stage2/
 
-# rendered corpora and the upstream artwork they are built from
-as-image-model/data/emoji/
-as-image-model/data/emoji_src/
-as-image-model/data/shapes/
+# Rendered corpora and the upstream artwork they are built from.
+#
+# Every DIRECTORY under as-image-model/data/ is generated — the only things
+# worth keeping there are the .py files that regenerate them. Naming datasets
+# one by one is how 593 MB of emoji300/ renders got staged the moment a new
+# corpus appeared; this rule covers whatever gets added next.
+as-image-model/data/*/
 
-# AS-IF: exported + quantized SD-Turbo, several GB
-as-image-model/asif_build/
+# AS-IF: exported + quantized diffusion builds, several GB each.
+# Wildcarded for the same reason as data/ above — asif_small/ appeared later
+# and a rule naming only asif_build/ silently staged it.
+as-image-model/asif_*/
 
 # trained models and exports
 checkpoints/

@@ -5,3 +5,9 @@ Pillow>=10.0        # renders the corpus
 
 # optional — publishing
 # huggingface_hub>=0.23   # export/push_to_hub.py
+
+# optional — the AS-IF track (compressing a pretrained model for the browser)
+# diffusers>=0.31
+# optimum[onnxruntime]>=1.23
+# peft>=0.13            # fusing LCM-LoRA in asif_export.py --small
+# onnxscript            # exporting TAESD in asif_export.py --tiny-vae

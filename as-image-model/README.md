@@ -262,6 +262,40 @@ at 512px on CPU. Enable with `--tiny-vae` on both the export and the sampler.
 > returns psychedelic noise that reads as a broken model rather than a broken
 > constant.
 
+### How small can AS-IF go?
+
+Two builds, both measured. `--small` swaps SD-Turbo for **Tiny-SD**, a
+block-pruned SD 1.5 whose UNet is 2.7× smaller and which carries CLIP ViT-L
+(123M) instead of OpenCLIP ViT-H (354M):
+
+| | SD-Turbo | Tiny-SD (`--small`) |
+|---|--:|--:|
+| UNet | 869 MB | **325 MB** |
+| Text encoder | 342 MB | **124 MB** |
+| Tiny VAE | 5.1 MB | 5.1 MB |
+| **Shipped** | **1216 MB** | **454 MB** |
+| Steps | 2 | 4–16 |
+| UNet passes per image | **2** | **8–32** |
+
+Quality at 4 steps is good — recognisable, well-formed images. The cost is not
+size, it is **passes**: Tiny-SD is not step-distilled, so it needs
+classifier-free guidance, which runs the UNet *twice per step* (conditional and
+unconditional). Four Tiny-SD steps is 8 UNet passes against SD-Turbo's 2. A
+2.7× smaller network does not recover a 4× pass deficit, so the small build is
+roughly **2.7× smaller and several times slower**.
+
+Which is right depends on where the pain is. For a browser that downloads once
+and generates many times, SD-Turbo wins. For a one-shot or bandwidth-limited
+setting, 454 MB may be worth it.
+
+> **The combination that would win does not exist off the shelf.** Pruned *and*
+> step-distilled — 454 MB at 2 passes — was the obvious plan, and it fails:
+> LCM-LoRA is trained against the full SD 1.5 UNet, so its tensors do not fit a
+> pruned one (`lora_A` wants `[64, 1280, 3, 3]`, the pruned model has
+> `[64, 640, 3, 3]`). Pruning and step-distillation do not compose after the
+> fact; a small few-step model has to be distilled as one thing.
+
+
 ### Where the remaining bytes are
 
 ```

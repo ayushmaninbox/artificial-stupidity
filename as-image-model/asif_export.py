@@ -37,6 +37,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 MODEL = "stabilityai/sd-turbo"
 
+# The smaller alternative. Tiny-SD is a block-pruned SD 1.5 (323M UNet vs
+# SD-Turbo's 865M) and, being SD 1.5, carries CLIP ViT-L (123M) instead of
+# OpenCLIP ViT-H (354M). Together that is ~451 MB int8 against ~1224 MB.
+#
+# The catch is that pruning does not make it few-step: Tiny-SD needs 20-25
+# steps, which is worse than useless in a browser. LCM-LoRA fixes that, and
+# fuses INTO the UNet weights, so few-step sampling costs no extra bytes.
+SMALL_MODEL = "segmind/tiny-sd"
+LCM_LORA = "latent-consistency/lcm-lora-sdv1-5"
+
 
 def human(n):
     for u in ("B", "KB", "MB", "GB"):
@@ -66,13 +76,27 @@ def report(out: Path, title):
     return total
 
 
-def do_export(out: Path):
+def do_export(out: Path, small: bool = False):
     from optimum.onnxruntime import ORTStableDiffusionPipeline
 
-    print(f"\n  downloading + exporting {MODEL} (this is the slow part) ...",
+    model = SMALL_MODEL if small else MODEL
+    print(f"\n  downloading + exporting {model} (this is the slow part) ...",
           flush=True)
     t0 = time.time()
-    pipe = ORTStableDiffusionPipeline.from_pretrained(MODEL, export=True)
+
+    # NOTE on LCM-LoRA, which looked like the obvious way to make this
+    # few-step and is not: LCM-LoRA is trained against the *full* SD 1.5 UNet,
+    # while Tiny-SD is that UNet with blocks pruned out. The channel widths no
+    # longer match --
+    #
+    #     up_blocks.2.resnets.1.conv1.lora_A
+    #     checkpoint [64, 1280, 3, 3]  vs  model [64, 640, 3, 3]
+    #
+    # -- and a LoRA cannot attach to an architecture it was not trained on.
+    # Pruning and step-distillation do not compose for free; a small few-step
+    # model has to be distilled as one, not assembled from two parts.
+    pipe = ORTStableDiffusionPipeline.from_pretrained(model, export=True)
+
     pipe.save_pretrained(out)
     print(f"  exported in {(time.time() - t0) / 60:.1f} min", flush=True)
 
@@ -159,6 +183,8 @@ def main():
     ap.add_argument("--out", default="asif_build")
     ap.add_argument("--tiny-vae", action="store_true",
                     help="also export TAESD, a 4.9 MB replacement decoder")
+    ap.add_argument("--small", action="store_true",
+                    help="use Tiny-SD + LCM-LoRA instead of SD-Turbo (~451 MB)")
     ap.add_argument("--skip-export", action="store_true",
                     help="reuse an existing fp32 export")
     args = ap.parse_args()
@@ -168,7 +194,7 @@ def main():
 
     if not args.skip_export:
         raw.parent.mkdir(parents=True, exist_ok=True)
-        do_export(raw)
+        do_export(raw, small=args.small)
     if not raw.exists():
         raise SystemExit(f"no export at {raw} — run without --skip-export first")
 
