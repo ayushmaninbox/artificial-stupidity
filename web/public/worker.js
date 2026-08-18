@@ -62,15 +62,35 @@ import {
  * of the WASM heap, and fall back to WASM with the optimiser turned down and
  * the arena disabled. Small models keep the fast defaults.
  */
-const SESSION_OPTS = (heavy = false) =>
-  heavy
-    ? {
-        executionProviders: ["webgpu", "wasm"],
-        graphOptimizationLevel: "basic",
-        enableMemPattern: false,
-        enableCpuMemArena: false,
-      }
-    : { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+let _gpu = null;
+/** Does this browser actually expose a usable adapter? */
+async function hasWebGPU() {
+  if (_gpu !== null) return _gpu;
+  try {
+    _gpu = !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
+  } catch {
+    _gpu = false;
+  }
+  return _gpu;
+}
+
+/**
+ * WebGPU keeps weights in GPU memory, so the WASM heap ceiling stops applying
+ * — which is the only way a 325 MB model reliably loads on machines where
+ * WASM cannot grow far enough. Where it is unavailable we fall back to WASM
+ * with the optimiser turned down and the arena off, which is slower and
+ * tighter but sometimes still enough.
+ */
+async function SESSION_OPTS(heavy = false) {
+  if (!heavy) return { executionProviders: ["wasm"], graphOptimizationLevel: "all" };
+  const gpu = await hasWebGPU();
+  return {
+    executionProviders: gpu ? ["webgpu", "wasm"] : ["wasm"],
+    graphOptimizationLevel: "basic",
+    enableMemPattern: false,
+    enableCpuMemArena: false,
+  };
+}
 
 /**
  * Turn an ONNX Runtime failure into something a person can act on.
@@ -236,7 +256,7 @@ async function loadChar(id) {
   let at = 0;
   for (const p of parts) { buf.set(p, at); at += p.length; }
 
-  const session = await ort.InferenceSession.create(buf, SESSION_OPTS());
+  const session = await ort.InferenceSession.create(buf, await SESSION_OPTS());
   const entry = { session, ...tok, block: 128 };
   charCache.set(id, entry);
   return entry;
@@ -358,6 +378,40 @@ const partialGet = (k) => idbOp("readonly", (st) => st.get(k));
 const partialPut = (k, v) => idbOp("readwrite", (st) => st.put(v, k));
 const partialDel = (k) => idbOp("readwrite", (st) => st.delete(k));
 
+/**
+ * Download to Cache Storage, then hand ORT the URL rather than the bytes.
+ *
+ * `InferenceSession.create(uint8Array)` needs the weights alive twice at once:
+ * the JS array we downloaded, plus ORT's copy inside the WASM heap. For a
+ * 325 MB model that peaks around 780 MB, which is exactly the allocation that
+ * fails. Giving ORT a URL lets it stream into WASM directly, so the JS copy
+ * never exists — and because the file is already in Cache Storage, nothing is
+ * fetched twice.
+ */
+async function ensureCached(url, id, onBytes) {
+  try {
+    const cache = await caches.open("transformers-cache");
+    const hit = await cache.match(url);
+    if (hit) {
+      const len = Number(hit.headers.get("content-length")) || 0;
+      if (len) onBytes(len, len);
+      return url;
+    }
+    const bytes = await fetchBytes(url, id, onBytes);
+    await cache.put(
+      url,
+      new Response(bytes, {
+        headers: { "content-type": "application/octet-stream",
+                   "content-length": String(bytes.length) },
+      }),
+    );
+    return url;
+  } catch {
+    // no Cache API (private mode) — fall back to bytes and accept the peak
+    return fetchBytes(url, id, onBytes);
+  }
+}
+
 async function fetchBytes(url, id, onBytes) {
   const saved = await partialGet(url);
   let prefix = saved?.bytes instanceof Uint8Array ? saved.bytes : null;
@@ -416,18 +470,16 @@ async function loadImage(id) {
     self.postMessage({ type: "progress", model: id, file: id, loaded: seen, total: APPROX });
   };
 
-  const [tb, ub, db] = [
-    await fetchBytes(`${base}/text.onnx`, id, bump),
-    await fetchBytes(`${base}/unet.onnx`, id, bump),
-    await fetchBytes(`${base}/decoder.onnx`, id, bump),
-  ];
-  const opt = SESSION_OPTS();
+  const opt = await SESSION_OPTS();
+  const tU = await ensureCached(`${base}/text.onnx`, id, bump);
+  const uU = await ensureCached(`${base}/unet.onnx`, id, bump);
+  const dU = await ensureCached(`${base}/decoder.onnx`, id, bump);
   const entry = {
     cfg,
     stoi: new Map(cfg.vocab.map((w, i) => [w, i])),
-    text: await ort.InferenceSession.create(tb, opt),
-    unet: await ort.InferenceSession.create(ub, opt),
-    dec: await ort.InferenceSession.create(db, opt),
+    text: await ort.InferenceSession.create(tU, opt),
+    unet: await ort.InferenceSession.create(uU, opt),
+    dec: await ort.InferenceSession.create(dU, opt),
   };
   imgCache.set(id, entry);
   return entry;
@@ -554,18 +606,22 @@ async function loadSD() {
   // Refuse the build we know cannot run, whatever a cached config claims.
   const dir = cfg.dir === "sd-turbo" ? "tiny-sd" : (cfg.dir ?? "tiny-sd");
   const b = `${SD_BASE}/${dir}`;
-  const [tb, ub, db] = [
-    await fetchBytes(`${b}/text_encoder/model.onnx`, "AS-IF", bump),
-    await fetchBytes(`${b}/unet/model.onnx`, "AS-IF", bump),
-    await fetchBytes(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump),
-  ];
-  const opt = SESSION_OPTS(true);
-  sdCache = {
-    cfg, tok,
-    text: await ort.InferenceSession.create(tb, opt),
-    unet: await ort.InferenceSession.create(ub, opt),
-    dec: await ort.InferenceSession.create(db, opt),
-  };
+  const opt = await SESSION_OPTS(true);
+  // Sequentially, smallest first: each session is built and settled before the
+  // next download starts, so peak memory is one model rather than three.
+  const tU = await ensureCached(`${b}/text_encoder/model.onnx`, "AS-IF", bump);
+  const text = await ort.InferenceSession.create(tU, opt);
+  const dU = await ensureCached(`${b}/vae_decoder_tiny/model.onnx`, "AS-IF", bump);
+  const dec = await ort.InferenceSession.create(dU, opt);
+  const uU = await ensureCached(`${b}/unet/model.onnx`, "AS-IF", bump);
+  const unet = await ort.InferenceSession.create(uU, opt);
+
+  sdCache = { cfg, tok, text, unet, dec };
+  self.postMessage({
+    type: "backend",
+    model: "AS-IF",
+    backend: (await hasWebGPU()) ? "webgpu" : "wasm",
+  });
   return sdCache;
 }
 

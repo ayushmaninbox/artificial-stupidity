@@ -43,6 +43,7 @@ export default function Page() {
      the model does — offering emoji grammar to AS-F, or open prose to AS-I,
      would just teach people the wrong thing to type. */
   const [cues, setCues] = useState<string[]>([]);
+  const [backend, setBackend] = useState<string | null>(null);
   useEffect(() => { setCues(suggestions(model, 4)); }, [model]);
   /** Models already in worker memory — switching back to one is instant. */
   const [resident, setResident] = useState<Set<string>>(() => new Set());
@@ -175,6 +176,8 @@ export default function Page() {
         const q = waiting.current;
         waiting.current = null;
         if (q) run.current(q);
+      } else if (m.type === "backend") {
+        setBackend(m.backend);
       } else if (m.type === "step") {
         setStep({ at: m.step, of: m.total });
       } else if (m.type === "image") {
@@ -567,6 +570,8 @@ export default function Page() {
                         </span>
                         <em>
                           {step ? `denoising · step ${step.at} of ${step.of}` : "starting"}
+                          {backend === "wasm" && byId(model).id === "AS-IF" && " · cpu, this is slow"}
+                          {backend === "webgpu" && " · gpu"}
                         </em>
                       </span>
                     ) : (
